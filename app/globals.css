@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #f3f6fb;
+  --color-brand-100: #e3eaf5;
+  --color-brand-500: #3f5f8f;
+  --color-brand-600: #324c74;
+  --color-brand-700: #263a59;
+  --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+}
+
+body {
+  @apply bg-slate-50 text-slate-800 antialiased;
+}

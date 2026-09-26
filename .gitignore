@@ -1,0 +1,18 @@
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# 秘密情報は絶対にコミットしない
+.env
+.env.*
+!.env.example
+
+.DS_Store
+npm-debug.log*
+
+# Playwright
+test-results/
+playwright-report/

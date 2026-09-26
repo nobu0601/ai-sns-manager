@@ -1,0 +1,216 @@
+// AI SNS Manager データベーススキーマ
+// 詳細は docs/database.md を参照
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Platform {
+  X
+  INSTAGRAM
+  THREADS
+}
+
+// 投稿全体の状態（SNS別の状態から集計される）
+enum PostStatus {
+  DRAFT
+  GENERATING
+  READY
+  SCHEDULED
+  POSTING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  NOT_REQUIRED
+}
+
+// SNS別の投稿状態
+enum PostPlatformStatus {
+  DRAFT
+  SCHEDULED
+  POSTING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum ApprovalMode {
+  ALWAYS // 常に承認
+  AI_ONLY // AI生成後のみ承認
+  AUTO // 完全自動
+}
+
+enum SocialAccountStatus {
+  CONNECTED
+  EXPIRED
+  DISCONNECTED
+}
+
+enum PostLogEvent {
+  POST_CREATED
+  POST_UPDATED
+  AI_GENERATED
+  APPROVED
+  REJECTED
+  SCHEDULED
+  CANCELLED
+  POST_STARTED
+  POST_SUCCESS
+  POST_FAILED
+  RETRY
+}
+
+enum LogStatus {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String?
+  // bcrypt ハッシュ。平文パスワードは保存しない
+  passwordHash String
+  approvalMode ApprovalMode @default(ALWAYS)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  brands         Brand[]
+  socialAccounts SocialAccount[]
+  posts          Post[]
+  oauthStates    OAuthState[]
+}
+
+model Brand {
+  id               String   @id @default(cuid())
+  userId           String
+  name             String
+  description      String   @default("")
+  targetAudience   String   @default("")
+  brandImage       String   @default("")
+  tone             String   @default("")
+  objective        String   @default("")
+  avoidExpressions String   @default("")
+  keywords         String[] @default([])
+  prohibitedWords  String[] @default([])
+  contentPillars   String[] @default([])
+  // 開発用サンプル（seed で作成）。本番データと区別する
+  isSample         Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  posts          Post[]
+  socialAccounts SocialAccount[]
+
+  @@index([userId])
+}
+
+// SNSアカウント。SNSのパスワードは保存しない。トークンは暗号化して保存する
+model SocialAccount {
+  id                    String              @id @default(cuid())
+  userId                String
+  brandId               String?
+  platform              Platform
+  accountName           String
+  externalAccountId     String
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  scopes                String[]            @default([])
+  status                SocialAccountStatus @default(CONNECTED)
+  isMock                Boolean             @default(false)
+  lastCheckedAt         DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand? @relation(fields: [brandId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, platform, externalAccountId])
+  @@index([userId, platform])
+}
+
+// OAuth 認可フロー中の一時状態（CSRF対策の state と PKCE の code_verifier）
+model OAuthState {
+  id           String   @id @default(cuid())
+  state        String   @unique
+  userId       String
+  platform     Platform
+  codeVerifier String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Post {
+  id             String         @id @default(cuid())
+  userId         String
+  brandId        String?
+  title          String
+  topic          String         @default("")
+  status         PostStatus     @default(DRAFT)
+  approvalStatus ApprovalStatus @default(PENDING)
+  scheduledAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand     Brand?         @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  platforms PostPlatform[]
+
+  @@index([userId, status])
+  @@index([userId, scheduledAt])
+}
+
+model PostPlatform {
+  id             String             @id @default(cuid())
+  postId         String
+  platform       Platform
+  content        String
+  status         PostPlatformStatus @default(DRAFT)
+  // 二重投稿防止キー（postId:platform）
+  idempotencyKey String             @unique
+  attempts       Int                @default(0)
+  publishedAt    DateTime?
+  externalPostId String?
+  externalUrl    String?
+  // ユーザー向けの分かりやすいエラー文。技術的な詳細は PostLog.metadata に残す
+  errorMessage   String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  post Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  logs PostLog[]
+
+  @@unique([postId, platform])
+  @@index([status])
+}
+
+model PostLog {
+  id             String       @id @default(cuid())
+  postPlatformId String
+  event          PostLogEvent
+  status         LogStatus
+  message        String
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  postPlatform PostPlatform @relation(fields: [postPlatformId], references: [id], onDelete: Cascade)
+
+  @@index([postPlatformId, createdAt])
+}
