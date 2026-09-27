@@ -24,32 +24,42 @@ describe("SNS別の投稿チェック", () => {
     expect(check("THREADS", "😀".repeat(max)).valid).toBe(true);
   });
 
-  it("Instagram はメディアなしだと警告（エラーではない）", () => {
-    const result = check("INSTAGRAM", "キャプション");
-    expect(result.valid).toBe(true);
-    expect(result.warnings[0]).toContain("画像または動画");
+  it("Instagram は画像URLが必須。https の公開URLのみ受け付ける", () => {
+    const check2 = (mediaUrls?: string[]) =>
+      validateAgainstCapabilities({ platform: "INSTAGRAM", content: "キャプション", mediaUrls, idempotencyKey: "k" }, PLATFORM_CAPABILITIES.INSTAGRAM);
+    expect(check2().errors[0]).toContain("画像のURLを入力してください");
+    expect(check2(["http://example.com/a.jpg"]).valid).toBe(false);
+    expect(check2(["https://example.com/a.jpg"]).valid).toBe(true);
   });
 });
 
 describe("入力スキーマ", () => {
-  it("SNS未選択はエラー", () => {
-    expect(postInputSchema.safeParse({ title: "t", platforms: [] }).success).toBe(false);
+  it("投稿先アカウント未選択はエラー", () => {
+    expect(postInputSchema.safeParse({ title: "t", targets: [] }).success).toBe(false);
   });
 
-  it("同じSNSの重複はエラー", () => {
-    const result = postInputSchema.safeParse({
+  it("同じアカウントの重複はエラー。同じSNSの別アカウントはOK", () => {
+    const dup = postInputSchema.safeParse({
       title: "t",
-      platforms: [
-        { platform: "X", content: "a" },
-        { platform: "X", content: "b" },
+      targets: [
+        { socialAccountId: "a1", content: "a" },
+        { socialAccountId: "a1", content: "b" },
       ],
     });
-    expect(result.success).toBe(false);
+    expect(dup.success).toBe(false);
+    const two = postInputSchema.safeParse({
+      title: "t",
+      targets: [
+        { socialAccountId: "a1", content: "a" },
+        { socialAccountId: "a2", content: "b" },
+      ],
+    });
+    expect(two.success).toBe(true);
   });
 
   it("タイトル必須・前後の空白は除去", () => {
-    expect(postInputSchema.safeParse({ title: "  ", platforms: [{ platform: "X", content: "" }] }).success).toBe(false);
-    const ok = postInputSchema.parse({ title: " 投稿 ", platforms: [{ platform: "X", content: "" }] });
+    expect(postInputSchema.safeParse({ title: "  ", targets: [{ socialAccountId: "a1", content: "" }] }).success).toBe(false);
+    const ok = postInputSchema.parse({ title: " 投稿 ", targets: [{ socialAccountId: "a1", content: "" }] });
     expect(ok.title).toBe("投稿");
     expect(ok.topic).toBe("");
   });

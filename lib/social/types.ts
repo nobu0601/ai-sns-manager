@@ -16,15 +16,18 @@ export interface SocialPlatformCapabilities {
   maxTextLength: number | null;
 }
 
-// OAuth で接続したアカウント情報（トークンは平文。保存時に暗号化する）
-export interface ConnectedAccount {
-  platform: Platform;
+// ユーザーが入力する各SNSのキー（平文。保存時は暗号化する）。
+// X: OAuth 1.0a のユーザーコンテキスト（開発者ポータルで発行する4つの値）
+// Threads / Instagram: 長期アクセストークン
+export type XCredentials = { apiKey: string; apiSecret: string; accessToken: string; accessTokenSecret: string };
+export type TokenCredentials = { accessToken: string };
+export type PlatformCredentials = XCredentials | TokenCredentials;
+
+// キー確認で分かったアカウント情報
+export interface VerifiedAccount {
   accountName: string;
   externalAccountId: string;
-  accessToken: string;
-  refreshToken?: string;
   tokenExpiresAt?: Date;
-  scopes?: string[];
 }
 
 // Adapter に渡す投稿内容
@@ -32,7 +35,7 @@ export interface PlatformPost {
   platform: Platform;
   content: string;
   mediaUrls?: string[];
-  // 二重投稿防止キー（postId:platform）。SNS側が対応していれば渡す
+  // 二重投稿防止キー（postId:socialAccountId）。SNS側が対応していれば渡す
   idempotencyKey: string;
 }
 
@@ -50,30 +53,15 @@ export interface ValidationResult {
   warnings: string[];
 }
 
-export interface AuthorizationRequest {
-  url: string;
-  state: string;
-  codeVerifier?: string;
-}
-
 // 各SNSは必ずこのインターフェースを実装する。新しいSNSの追加もこれを実装するだけでよい。
 export interface SocialPlatformAdapter {
   readonly platform: Platform;
   readonly capabilities: SocialPlatformCapabilities;
 
-  getAuthorizationUrl(input: { state: string; redirectUri: string }): Promise<AuthorizationRequest>;
+  // 入力されたキーでSNSに問い合わせ、有効ならアカウント情報を返す（無効なら SocialPublishError）
+  verifyCredentials(credentials: PlatformCredentials): Promise<VerifiedAccount>;
 
-  handleCallback(input: {
-    code: string;
-    redirectUri: string;
-    codeVerifier?: string;
-  }): Promise<ConnectedAccount>;
-
-  refreshToken(account: ConnectedAccount): Promise<ConnectedAccount>;
-
-  createPost(post: PlatformPost, account: ConnectedAccount): Promise<PublishedPost>;
-
-  deletePost?(externalPostId: string, account: ConnectedAccount): Promise<void>;
+  createPost(post: PlatformPost, credentials: PlatformCredentials, account: VerifiedAccount): Promise<PublishedPost>;
 
   validatePost(post: PlatformPost): Promise<ValidationResult>;
 }

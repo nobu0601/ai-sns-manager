@@ -76,7 +76,7 @@ export default async function PostsPage({ searchParams }: { searchParams: Promis
                     <div className="flex flex-wrap gap-1">
                       {post.platforms.map((p) => (
                         <Badge key={p.id} tone={STATUS_TONES[p.status]}>
-                          {PLATFORM_LABELS[p.platform]}：{PLATFORM_STATUS_LABELS[p.status]}
+                          {PLATFORM_LABELS[p.platform]} {p.accountName}：{PLATFORM_STATUS_LABELS[p.status]}
                         </Badge>
                       ))}
                     </div>

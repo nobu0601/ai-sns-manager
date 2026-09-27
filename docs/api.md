@@ -95,7 +95,10 @@
           "id": "...",
           "postId": "...",
           "platform": "X",
+          "socialAccountId": "account123",
+          "accountName": "@example",
           "content": "投稿内容",
+          "mediaUrls": [],
           "status": "SCHEDULED",
           "idempotencyKey": "...",
           "attempts": 0,
@@ -114,7 +117,7 @@
 
 ### POST /api/posts
 
-投稿作成（複数 SNS 対応）。
+投稿作成（複数 SNS アカウント対応）。
 
 **Request:**
 ```json
@@ -122,14 +125,16 @@
   "title": "投稿タイトル",
   "topic": "話題 (optional)",
   "brandId": null,
-  "platforms": [
+  "targets": [
     {
-      "platform": "X",
-      "content": "280字以内のテキスト"
+      "socialAccountId": "account123",
+      "content": "280字以内のテキスト",
+      "mediaUrls": []
     },
     {
-      "platform": "INSTAGRAM",
-      "content": "2200字以内のテキスト"
+      "socialAccountId": "account456",
+      "content": "2200字以内のテキスト",
+      "mediaUrls": ["https://..."]
     }
   ]
 }
@@ -181,8 +186,8 @@
 {
   "title": "新しいタイトル",
   "topic": "新しい話題",
-  "platforms": [
-    { "platform": "X", "content": "新しい内容" }
+  "targets": [
+    { "socialAccountId": "account123", "content": "新しい内容", "mediaUrls": [] }
   ]
 }
 ```
@@ -295,10 +300,12 @@ AI で投稿内容を生成。Phase 2。
       "id": "...",
       "platform": "X",
       "accountName": "@example",
+      "label": "メインアカウント",
+      "credentialHint": "••••abcd",
       "status": "CONNECTED",
       "isMock": true,
       "lastCheckedAt": "2025-01-01T00:00:00Z",
-      "tokenExpiresAt": "2025-02-01T00:00:00Z",
+      "lastError": null,
       "brandId": null,
       "createdAt": "..."
     }
@@ -309,7 +316,52 @@ AI で投稿内容を生成。Phase 2。
 
 ### POST /api/social/{platform}/connect
 
-OAuth 認可 URL を取得。`platform`: X / INSTAGRAM / THREADS
+API キーを入力してアカウントを連携。`platform`: X / INSTAGRAM / THREADS
+
+**Request:**
+```json
+{
+  "label": "メインアカウント (optional)",
+  "brandId": null,
+  "credentials": {
+    "apiKey": "...",
+    "apiSecret": "...",
+    "accessToken": "...",
+    "accessTokenSecret": "..."
+  }
+}
+```
+
+**Response (201):**
+```json
+{
+  "account": { /* SocialAccount */ }
+}
+```
+
+### PATCH /api/social/accounts/{id}
+
+アカウントの表示名、ブランド割り当て、キーを更新。キーの値が別のアカウントのものなら 400 (ACCOUNT_MISMATCH)。
+
+**Request:**
+```json
+{
+  "label": "新しい名前 (optional)",
+  "brandId": null,
+  "credentials": { /* 新しいキー (optional) */ }
+}
+```
+
+**Response (200):**
+```json
+{
+  "account": { /* 更新済み SocialAccount */ }
+}
+```
+
+### POST /api/social/accounts/{id}/verify
+
+保存済みのキーが今も有効か確認。
 
 **Request:**
 ```json
@@ -319,19 +371,9 @@ OAuth 認可 URL を取得。`platform`: X / INSTAGRAM / THREADS
 **Response (200):**
 ```json
 {
-  "authorizationUrl": "https://auth.example.com/authorize?..."
+  "account": { /* 検証済み SocialAccount */ }
 }
 ```
-
-### GET /api/social/{platform}/callback
-
-OAuth コールバック（リダイレクト URI）。
-
-**Query:**
-- `code`: OAuth authorization code
-- `state`: CSRF state (検証済み)
-
-**Response:** リダイレクト to `/accounts` (success) or `/login` (error)
 
 ### DELETE /api/social/accounts/{id}
 

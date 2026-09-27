@@ -1,18 +1,18 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Platform } from "@prisma/client";
 import { PLATFORM_CAPABILITIES } from "../capabilities";
 import { SocialPublishError } from "../errors";
 import { validateAgainstCapabilities } from "../validate";
 import type {
-  AuthorizationRequest,
-  ConnectedAccount,
+  PlatformCredentials,
   PlatformPost,
   PublishedPost,
   SocialPlatformAdapter,
   ValidationResult,
+  VerifiedAccount,
 } from "../types";
 
-// 本物のSNS APIを呼ばずに OAuth・投稿成功・投稿失敗をシミュレーションする。
+// 本物のSNS APIを呼ばずに、キー確認・投稿成功・投稿失敗をシミュレーションする。
 // 投稿本文に以下のタグを含めると、対応する失敗を再現できる。
 export const MOCK_TRIGGERS = {
   authError: "#mock-auth-error",
@@ -20,7 +20,8 @@ export const MOCK_TRIGGERS = {
   transientError: "#mock-transient-error",
 } as const;
 
-export const MOCK_DENIED_CODE = "mock-denied";
+// キーにこの文字列を含めると「無効なキー」として扱う
+export const MOCK_INVALID_KEY = "invalid";
 
 export class MockSocialAdapter implements SocialPlatformAdapter {
   readonly capabilities;
@@ -32,36 +33,14 @@ export class MockSocialAdapter implements SocialPlatformAdapter {
     this.capabilities = PLATFORM_CAPABILITIES[platform];
   }
 
-  async getAuthorizationUrl(input: { state: string; redirectUri: string }): Promise<AuthorizationRequest> {
-    // 本物の認可画面の代わりに、自アプリのコールバックへ直接戻す
-    const url = new URL(input.redirectUri);
-    url.searchParams.set("code", `mock-code-${randomUUID()}`);
-    url.searchParams.set("state", input.state);
-    return { url: url.toString(), state: input.state };
-  }
-
-  async handleCallback(input: { code: string }): Promise<ConnectedAccount> {
-    if (input.code === MOCK_DENIED_CODE) {
-      throw new SocialPublishError("AUTH", this.platform, "Mock: 認可が拒否されました");
+  async verifyCredentials(credentials: PlatformCredentials): Promise<VerifiedAccount> {
+    const values = Object.values(credentials).map(String);
+    if (values.length === 0 || values.some((v) => !v.trim() || v.includes(MOCK_INVALID_KEY))) {
+      throw new SocialPublishError("AUTH", this.platform, "Mock: invalid credentials (code 190)");
     }
-    const handle = this.platform.toLowerCase();
-    return {
-      platform: this.platform,
-      accountName: `@loungeplus_${handle}_mock`,
-      externalAccountId: `mock-${handle}-account`,
-      accessToken: `mock-access-${randomUUID()}`,
-      refreshToken: `mock-refresh-${randomUUID()}`,
-      tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-      scopes: ["mock.write"],
-    };
-  }
-
-  async refreshToken(account: ConnectedAccount): Promise<ConnectedAccount> {
-    return {
-      ...account,
-      accessToken: `mock-access-${randomUUID()}`,
-      tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-    };
+    // 同じキーなら同じアカウント、違うキーなら別アカウントとして扱う
+    const id = createHash("sha256").update(values.join("|")).digest("hex").slice(0, 8);
+    return { accountName: `@mock_${this.platform.toLowerCase()}_${id.slice(0, 4)}`, externalAccountId: `mock-${id}` };
   }
 
   async createPost(post: PlatformPost): Promise<PublishedPost> {
@@ -86,10 +65,6 @@ export class MockSocialAdapter implements SocialPlatformAdapter {
       publishedAt: new Date(),
       raw: { mock: true, idempotencyKey: post.idempotencyKey },
     };
-  }
-
-  async deletePost(): Promise<void> {
-    // Mock では何もしない
   }
 
   async validatePost(post: PlatformPost): Promise<ValidationResult> {

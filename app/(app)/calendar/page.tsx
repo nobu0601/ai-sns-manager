@@ -74,7 +74,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
                         >
                           {post.scheduledAt && timeFormat.format(post.scheduledAt)} {post.title}
                           <span className="block truncate text-[10px] opacity-75">
-                            {post.platforms.map((p) => PLATFORM_LABELS[p.platform]).join("・")}
+                            {post.platforms.map((p) => `${PLATFORM_LABELS[p.platform]} ${p.accountName}`.trim()).join("・")}
                           </span>
                         </Link>
                       </li>

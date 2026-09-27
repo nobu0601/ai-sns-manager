@@ -12,7 +12,7 @@ export function validateAgainstCapabilities(
   const content = post.content.trim();
   const hasMedia = (post.mediaUrls?.length ?? 0) > 0;
 
-  if (!content && !hasMedia) errors.push(`${name}: 投稿内容を入力してください`);
+  if (!content && !(capabilities.requiresMedia && hasMedia)) errors.push(`${name}: 投稿内容を入力してください`);
 
   // 絵文字・サロゲートペアを1文字として数える（SNS側の厳密な数え方とは異なる場合がある）
   const length = [...content].length;
@@ -21,7 +21,10 @@ export function validateAgainstCapabilities(
   }
 
   if (capabilities.requiresMedia && !hasMedia) {
-    warnings.push(`${name}: 実際の投稿には画像または動画が必要です（メディア添付は Phase 3 で対応予定）`);
+    errors.push(`${name}: 画像のURLを入力してください（${name}は画像なしでは投稿できません）`);
+  }
+  for (const url of post.mediaUrls ?? []) {
+    if (!/^https:\/\/\S+$/.test(url)) errors.push(`${name}: 画像のURLは https:// で始まる公開URLにしてください`);
   }
 
   return { valid: errors.length === 0, errors, warnings };

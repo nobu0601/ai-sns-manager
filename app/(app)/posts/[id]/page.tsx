@@ -39,7 +39,7 @@ export default async function PostDetailPage({
   const inProgress = post.status === "POSTING" || post.platforms.some((p) => p.status === "POSTING" || (p.status === "SCHEDULED" && p.errorMessage));
   const soon = post.status === "SCHEDULED" && post.scheduledAt && post.scheduledAt.getTime() - Date.now() < 60_000;
   const logs = post.platforms
-    .flatMap((p) => p.logs.map((l) => ({ ...l, platform: p.platform })))
+    .flatMap((p) => p.logs.map((l) => ({ ...l, platform: p.platform, accountName: p.accountName })))
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
   return (
@@ -92,7 +92,7 @@ export default async function PostDetailPage({
           {post.platforms.map((p) => (
             <Card
               key={p.id}
-              title={PLATFORM_LABELS[p.platform]}
+              title={`${PLATFORM_LABELS[p.platform]} ${p.accountName}`.trim()}
               action={<Badge tone={STATUS_TONES[p.status]}>{PLATFORM_STATUS_LABELS[p.status]}</Badge>}
             >
               <p className="whitespace-pre-wrap break-words text-sm text-slate-800">{p.content || "（内容なし）"}</p>
@@ -126,7 +126,7 @@ export default async function PostDetailPage({
               {logs.map((l) => (
                 <li key={l.id} className="text-sm">
                   <div className="flex items-center gap-2">
-                    <Badge tone={LOG_TONES[l.status]}>{PLATFORM_LABELS[l.platform]}</Badge>
+                    <Badge tone={LOG_TONES[l.status]}>{`${PLATFORM_LABELS[l.platform]} ${l.accountName}`.trim()}</Badge>
                     <span className="text-xs text-slate-500">{formatDateTime(l.createdAt)}</span>
                   </div>
                   <p className="mt-1 text-slate-700">{l.message}</p>

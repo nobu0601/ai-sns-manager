@@ -3,7 +3,8 @@
 X・Instagram・Threads への投稿を一元管理する Web アプリです。
 最終的には「SNS 運用そのものを AI が支援・自動化するプラットフォーム」を目指します。
 
-> **現在の状態：Phase 1（MVP）完了。** 実際の SNS への投稿は未対応で、**Mock モード**で動作します。
+> **現在の状態：Phase 1（MVP）完了＋SNS 実投稿に対応。** 各 SNS の APIキーを登録すると、X・Instagram・Threads へ実際に投稿できます（`SOCIAL_PROVIDER_MODE=live`）。
+> 初期設定は **Mock モード**（実際の SNS には投稿しない）です。
 > AI による投稿生成は Phase 2、画像・動画生成は Phase 3 で実装予定です（→ [ロードマップ](#ロードマップと未実装機能)）。
 
 ---
@@ -25,7 +26,8 @@ X・Instagram・Threads への投稿を一元管理する Web アプリです。
 
 - **ログイン / ユーザー登録**（メールアドレス + パスワード）
 - **ダッシュボード**：接続 SNS、今日の投稿、予約投稿、今月の投稿、投稿成功率、最近の投稿
-- **SNS アカウント管理**：接続・再認証・切断（OAuth 方式。SNS のパスワードは保存しない。トークンは AES-256-GCM で暗号化保存）
+- **SNS アカウント管理**：APIキーを入力して連携。**同じ SNS に複数アカウント**を登録可能。キーの確認・更新・切断（SNS のパスワードは不要・保存しない。キーは AES-256-GCM で暗号化保存し、画面には末尾4文字のみ表示）
+- **複数アカウントへの投稿**：投稿ごとに投稿先アカウントを選択。アカウントごとに本文を変えることも可能
 - **投稿作成・編集**：タイトル、テーマ、ブランド、対象 SNS、SNS ごとの本文、文字数チェック
 - **承認**：投稿モード「常に承認（初期値）/ AI 生成後のみ承認 / 完全自動」。承認・却下
 - **予約投稿 / 今すぐ投稿**：BullMQ の遅延ジョブで実行。Web リクエスト内では投稿しない
@@ -35,7 +37,7 @@ X・Instagram・Threads への投稿を一元管理する Web アプリです。
 - **投稿一覧・履歴**：状態で絞り込み、SNS 別の成功/失敗表示
 - **投稿ログ**：作成・承認・予約・投稿開始・成功・失敗・リトライを記録（秘密情報はマスク）
 - **ブランド設定**：ブランド名、説明、ターゲット、トーン、キーワード、禁止ワード、投稿テーマの柱など（Phase 2 の AI 生成で使用）
-- **Mock モード**：SNS API を呼ばずに OAuth・投稿成功・失敗をシミュレーション
+- **Mock モード**：SNS API を呼ばずに、キー確認・投稿成功・失敗をシミュレーション
 
 ## スクリーンショット
 
@@ -84,13 +86,14 @@ Windows（PowerShell）で `openssl` が無い場合：
 | `DATABASE_URL` | ✅ | PostgreSQL 接続文字列 |
 | `REDIS_URL` | ✅ | Redis 接続文字列 |
 | `AUTH_SECRET` | ✅ | Auth.js のセッション署名キー |
-| `AUTH_URL` | 本番 | 公開 URL（OAuth のリダイレクト URI にも使用） |
+| `AUTH_URL` | 本番 | 公開 URL |
 | `AUTH_TRUST_HOST` | 本番 | リバースプロキシ配下なら `true` |
-| `ENCRYPTION_KEY` | ✅ | OAuth トークン暗号化キー（32 バイトの base64） |
-| `SOCIAL_PROVIDER_MODE` | | `mock`（初期値）/ `live`（公式 API。Step 11 以降で実装） |
+| `ENCRYPTION_KEY` | ✅ | SNS の APIキーを暗号化するキー（32 バイトの base64） |
+| `SOCIAL_PROVIDER_MODE` | | `mock`（初期値・実際には投稿しない）/ `live`（登録した APIキーで実際に投稿） |
 | `MOCK_TRANSIENT_FAILURE_RATE` | | Mock で一時失敗させる割合（0〜1）。リトライ確認用 |
-| `X_CLIENT_ID` / `X_CLIENT_SECRET` など | | 各 SNS の OAuth 情報（live モードで使用予定） |
-| `OPENAI_API_KEY` / `FAL_KEY` | | Phase 2 / 3 で使用予定 |
+| `ANTHROPIC_API_KEY` | | Claude の APIキー。AI 投稿生成（Phase 2）で使用。設定状況は「設定」画面で確認できる |
+| `THREADS_API_VERSION` / `INSTAGRAM_API_VERSION` | | Meta Graph API のバージョン指定（任意。空ならアプリの既定） |
+| `FAL_KEY` | | 画像・動画生成（Phase 3）で使用予定 |
 | `TEST_DATABASE_URL` | | 設定すると DB を使う統合テストが実行される |
 
 `.env` は Git 管理対象外です。API キーをソースコードに書かないでください。
@@ -118,21 +121,33 @@ Worker は起動時に「DB では予約中なのにキューにジョブが無�
 
 ## SNS API 設定
 
-Phase 1 は Mock モードのみ対応です。`SOCIAL_PROVIDER_MODE=mock` のまま使ってください。
+SNS のキーは `.env` ではなく、アプリの **「SNSアカウント」画面**からアカウントごとに登録します。
+「連携する」を押すと、入力したキーで SNS に問い合わせてアカウント名を取得し、確認できたものだけを暗号化して保存します。
+同じ SNS に複数のアカウントを登録でき、投稿作成画面で投稿先のアカウントを選べます。
 
-- アカウント画面で「接続」を押すと、テスト用アカウントが登録されます（OAuth の往復を模擬）
+| SNS | 入力するキー | 取得場所・条件 |
+| --- | --- | --- |
+| X | API Key / API Key Secret / Access Token / Access Token Secret | X 開発者ポータルのアプリの「Keys and tokens」。アプリの権限を **Read and Write** にしてから Access Token を発行する。投稿 API の利用には X API の有料プランが必要な場合がある（最新の料金・上限は開発者ポータルで確認） |
+| Threads | アクセストークン（長期） | Meta for Developers で Threads のユースケースを持つアプリを作成し、`threads_basic`・`threads_content_publish` の権限でトークンを発行 |
+| Instagram | アクセストークン（長期） | プロアカウント（ビジネス／クリエイター）のみ。「Instagram ログインを使った Instagram API」でアプリを作成し、`instagram_business_basic`・`instagram_business_content_publish` の権限でトークンを発行 |
+
+- Threads・Instagram の長期アクセストークンには有効期限があります。期限が切れると投稿が「接続が切れています」で失敗し、アカウントが「再認証が必要」になります。新しいトークンを発行して「キーを更新」で入れ直してください
+- Instagram は画像なしでは投稿できません。投稿作成画面で **https:// の公開画像 URL** を入力してください（画像のアップロード機能は Phase 3 で対応予定）
+- 実際に投稿するには `.env` の `SOCIAL_PROVIDER_MODE=live` にして、Web と Worker を再起動します。Mock モードで登録したアカウントは live では使えないため、live で登録し直してください
+
+各 SNS の API の呼び出し方と確認元は [docs/social-api.md](docs/social-api.md) を参照してください。
+
+### Mock モード（開発・テスト用）
+
+- キーには任意の文字列を入力できます（`invalid` を含めると「無効なキー」として扱われます）。同じキーは同じアカウント、違うキーは別アカウントになります
 - 投稿本文に次のタグを入れると失敗を再現できます
   - `#mock-auth-error`：接続切れ（再試行せず失敗、アカウントは「再認証が必要」に）
   - `#mock-content-error`：投稿内容エラー（再試行せず失敗）
   - `#mock-transient-error`：一時的な障害（30 秒 → 2 分と再試行し、3 回目で失敗）
 
-公式 API（X / Instagram Graph API / Threads API）の連携は、実装時点の公式ドキュメントを確認してから
-Step 11〜13 で実装します。OAuth のリダイレクト URI は `{AUTH_URL}/api/social/{x|instagram|threads}/callback` です。
-詳細は [docs/social-api.md](docs/social-api.md)。
-
 ## AI API 設定
 
-Phase 2 で OpenAI API による投稿生成を実装予定です（`OPENAI_API_KEY`）。
+Phase 2 で Claude（Anthropic）による投稿生成を実装予定です。`.env` の `ANTHROPIC_API_KEY` にキーを設定してください（設定済みかどうかは「設定」画面に表示されます）。
 現在 `POST /api/posts/:id/generate` は 501 を返します。プロンプトは `prompts/` に分離して管理します。
 
 ## 開発方法
@@ -162,9 +177,9 @@ npm run worker   # 別ターミナルで Worker を起動
 npm test
 ```
 
-- **単体テスト**：トークン暗号化、Mock SNS Adapter、投稿バリデーション、予約日時・カレンダー計算、リトライ間隔、状態集計、ログのマスク
+- **単体テスト**：キー暗号化、各 SNS の Adapter（X の OAuth 署名・Threads・Instagram の呼び出し手順を偽のサーバーで確認）、Mock SNS Adapter、投稿バリデーション、予約日時・カレンダー計算、リトライ間隔、状態集計、ログのマスク
 - **統合テスト**（`TEST_DATABASE_URL` / `REDIS_URL` が設定されているとき）：投稿作成 → 承認 → 予約 → 投稿、二重投稿防止、リトライ、失敗時の状態、他ユーザーからのアクセス拒否、キュー登録・取消
-- **E2E**：`npm run build` 後に `npm run test:e2e`。アプリと Worker を起動し、登録 → ログイン → SNS 接続 → 投稿作成 → 承認 → 今すぐ投稿 → 予約 → カレンダー → 失敗表示までを確認します
+- **E2E**：`npm run build` 後に `npm run test:e2e`。アプリと Worker を起動し、登録 → ログイン → APIキーで複数アカウント連携 → 投稿作成 → 承認 → 今すぐ投稿 → 予約 → カレンダー → 失敗表示までを確認します
   - Playwright のブラウザ：`npx playwright install chromium`（インストール済みのものを使う場合は `PLAYWRIGHT_CHROMIUM_EXECUTABLE` にパスを指定）
 
 テスト用 DB は開発用と分けてください（例：`ai_sns_manager_test` を作成し `DATABASE_URL=<テスト用> npx prisma migrate deploy`）。
@@ -188,8 +203,9 @@ npm run worker    # Worker（別プロセス）
 | --- | --- |
 | 予約した投稿がいつまでも「予約済み」のまま | Worker（`npm run worker`）が起動しているか確認してください |
 | 「予約処理を開始できませんでした」 | Redis に接続できていません。`REDIS_URL` と Redis の起動を確認してください |
-| 「◯◯のアカウントが接続されていません」 | アカウント画面で接続してください。モードを切り替えた場合は再接続が必要です（Mock と live のアカウントは混在できません） |
-| `ENCRYPTION_KEY は32バイト…` | `openssl rand -base64 32` で生成した値を設定してください。**運用開始後に変更すると保存済みトークンが復号できなくなります**（再接続が必要） |
+| 「◯◯のキーを確認できませんでした」 | キーの値（前後の空白・コピー漏れ）と、投稿の権限（X は Read and Write、Threads/Instagram は content_publish）を確認してください |
+| 「◯◯ は再接続が必要です」 | トークンの期限切れなどです。SNSアカウント画面で新しいキーを「キーを更新」から入れ直すか、「接続確認」を押してください。モードを切り替えた場合も登録し直しが必要です（Mock と live のアカウントは混在できません） |
+| `ENCRYPTION_KEY は32バイト…` | `openssl rand -base64 32` で生成した値を設定してください。**運用開始後に変更すると保存済みの APIキーが復号できなくなります**（キーの再登録が必要） |
 | ログインできない | `AUTH_SECRET` が設定されているか、本番では `AUTH_URL` / `AUTH_TRUST_HOST` を確認してください |
 | Prisma のエラー | `npm run db:migrate` を実行し、`DATABASE_URL` を確認してください |
 
@@ -197,15 +213,16 @@ npm run worker    # Worker（別プロセス）
 
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
-| 1 | ログイン、Dashboard、ブランド、SNS アカウント（Mock）、投稿作成・編集・承認・予約、キュー・リトライ、カレンダー、履歴、ログ | ✅ 完了 |
+| 1 | ログイン、Dashboard、ブランド、SNS アカウント（APIキー連携・複数アカウント・実投稿）、投稿作成・編集・承認・予約、キュー・リトライ、カレンダー、履歴、ログ | ✅ 完了 |
 | 2 | AI 投稿生成（5 案）、SNS 別最適化、Brand Voice、禁止ワードチェック、再生成 | 未着手 |
 | 3 | 画像・動画生成（fal.ai）、AI スケジュール、AI Agent、完全自動モード | 未着手 |
 | 4 | 分析、AI 分析、複数ブランド・SNS 拡張 | 未着手 |
 
 Phase 1 時点で実装していないもの（理由）：
 
-- **X / Instagram / Threads の公式 API 連携**：開発順序（Step 11〜13）に従い、公式ドキュメントを確認してから実装するため。各 Adapter は現在「未実装」エラーを返します
-- **Instagram へのメディア付き投稿**：Instagram は画像・動画が必須ですが、メディア添付は Phase 3 で対応するため。Mock モードでは警告表示のうえ投稿を許可しています
+- **本物の SNS での動作確認**：開発環境から各 SNS の API に接続できず、実際のキーでの投稿は未確認です。リクエスト形式は公式 SDK・公式サンプル・公式ドキュメントに合わせ、偽のサーバーを使ったテストで確認しています。最初の本番利用時は、テスト用アカウントで1件投稿して確認してください
+- **画像のアップロード・X と Threads への画像付き投稿**：Instagram の画像 URL 指定のみ対応。アップロードは Phase 3 で対応予定
+- **動画投稿**：Phase 3 で対応予定
 - **カレンダーのドラッグ＆ドロップ**：Phase 1 は日時指定で予約する方針のため
-- **トークンの自動更新（refresh）**：Adapter に `refreshToken` を定義済み。live 連携実装時に Worker から呼び出す予定
+- **Threads / Instagram のトークン自動更新**：期限切れ時は「キーを更新」で入れ直す運用。自動更新は今後の対応
 - **パスワードリセット・メール認証**：メール送信基盤が未導入のため

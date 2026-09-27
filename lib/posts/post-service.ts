@@ -1,25 +1,46 @@
-import type { Platform, Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/database/prisma";
 import { formatDateTime, isValidScheduleTime } from "@/lib/datetime";
 import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
 import { ServiceError, notFound } from "@/lib/errors/service-error";
 import { logger } from "@/lib/logging/logger";
 import { getPublishScheduler } from "@/lib/queue/post-queue";
-import { connectedPlatforms } from "@/lib/social/account-service";
+import { listPostableAccounts } from "@/lib/social/account-service";
 import { getAdapter } from "@/lib/social/registry";
 import type { PostInput } from "@/lib/validation/schemas";
 import { writePostLog } from "./post-log";
 import { computePostStatus, initialApprovalStatus, isApproved, isEditable } from "./status";
 
+const platformOrder = [{ platform: "asc" }, { accountName: "asc" }] satisfies Prisma.PostPlatformOrderByWithRelationInput[];
+
 const postInclude = {
-  platforms: { orderBy: { platform: "asc" } },
+  platforms: { orderBy: platformOrder },
   brand: { select: { id: true, name: true } },
 } satisfies Prisma.PostInclude;
 
 export type PostWithPlatforms = Prisma.PostGetPayload<{ include: typeof postInclude }>;
 
-export function idempotencyKeyFor(postId: string, platform: Platform): string {
-  return `${postId}:${platform}`;
+// 二重投稿防止キー。同じ投稿・同じアカウントへの投稿は1回だけ
+export function idempotencyKeyFor(postId: string, socialAccountId: string): string {
+  return `${postId}:${socialAccountId}`;
+}
+
+// 入力された投稿先アカウントが本人のものか確認し、SNS種別と表示名を補う
+async function resolveTargets(userId: string, targets: PostInput["targets"]) {
+  const accounts = await prisma.socialAccount.findMany({
+    where: { userId, id: { in: targets.map((t) => t.socialAccountId) } },
+    select: { id: true, platform: true, accountName: true },
+  });
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  return targets.map((t) => {
+    const account = byId.get(t.socialAccountId);
+    if (!account) throw notFound("投稿先のSNSアカウント");
+    return { ...t, platform: account.platform, accountName: account.accountName };
+  });
+}
+
+function targetLabel(p: { platform: keyof typeof PLATFORM_LABELS; accountName: string }): string {
+  return `${PLATFORM_LABELS[p.platform]} ${p.accountName}`.trim();
 }
 
 async function findOwnedPost(userId: string, postId: string): Promise<PostWithPlatforms> {
@@ -71,6 +92,7 @@ export async function getPost(userId: string, postId: string) {
 
 export async function createPost(userId: string, input: PostInput): Promise<PostWithPlatforms> {
   await assertBrandOwned(userId, input.brandId);
+  const targets = await resolveTargets(userId, input.targets);
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { approvalMode: true } });
 
   const postId = await prisma.$transaction(async (tx) => {
@@ -83,13 +105,16 @@ export async function createPost(userId: string, input: PostInput): Promise<Post
         approvalStatus: initialApprovalStatus(user.approvalMode, "manual"),
       },
     });
-    for (const p of input.platforms) {
+    for (const t of targets) {
       await tx.postPlatform.create({
         data: {
           postId: post.id,
-          platform: p.platform,
-          content: p.content,
-          idempotencyKey: idempotencyKeyFor(post.id, p.platform),
+          platform: t.platform,
+          socialAccountId: t.socialAccountId,
+          accountName: t.accountName,
+          content: t.content,
+          mediaUrls: t.mediaUrls,
+          idempotencyKey: idempotencyKeyFor(post.id, t.socialAccountId),
         },
       });
     }
@@ -123,9 +148,10 @@ export async function updatePost(userId: string, postId: string, input: PostInpu
     throw new ServiceError(409, "投稿中・投稿済みの投稿は編集できません", "NOT_EDITABLE");
   }
   if (post.platforms.some((p) => p.status === "PUBLISHED")) {
-    throw new ServiceError(409, "一部のSNSに投稿済みのため編集できません", "NOT_EDITABLE");
+    throw new ServiceError(409, "一部のアカウントに投稿済みのため編集できません", "NOT_EDITABLE");
   }
   await assertBrandOwned(userId, input.brandId);
+  const targets = await resolveTargets(userId, input.targets);
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { approvalMode: true } });
 
   // 内容が変わったら予約を解除し、承認をやり直す（承認後にすり替わるのを防ぐ）
@@ -142,16 +168,26 @@ export async function updatePost(userId: string, postId: string, input: PostInpu
         approvalStatus: initialApprovalStatus(user.approvalMode, "manual"),
       },
     });
-    const wanted = new Set(input.platforms.map((p) => p.platform));
-    const removed = post.platforms.filter((p) => !wanted.has(p.platform));
+    const wanted = new Set(targets.map((t) => t.socialAccountId));
+    const removed = post.platforms.filter((p) => !p.socialAccountId || !wanted.has(p.socialAccountId));
     if (removed.length > 0) await tx.postPlatform.deleteMany({ where: { id: { in: removed.map((p) => p.id) } } });
 
-    for (const p of input.platforms) {
-      await tx.postPlatform.upsert({
-        where: { postId_platform: { postId, platform: p.platform } },
-        create: { postId, platform: p.platform, content: p.content, idempotencyKey: idempotencyKeyFor(postId, p.platform) },
-        update: { content: p.content, status: "DRAFT", errorMessage: null },
-      });
+    for (const t of targets) {
+      const fields = { content: t.content, mediaUrls: t.mediaUrls, accountName: t.accountName };
+      const existing = post.platforms.find((p) => p.socialAccountId === t.socialAccountId);
+      if (existing) {
+        await tx.postPlatform.update({ where: { id: existing.id }, data: { ...fields, status: "DRAFT", errorMessage: null } });
+      } else {
+        await tx.postPlatform.create({
+          data: {
+            postId,
+            platform: t.platform,
+            socialAccountId: t.socialAccountId,
+            idempotencyKey: idempotencyKeyFor(postId, t.socialAccountId),
+            ...fields,
+          },
+        });
+      }
     }
     const ids = (await tx.postPlatform.findMany({ where: { postId }, select: { id: true } })).map((p) => p.id);
     await writePostLog(
@@ -215,21 +251,24 @@ export async function cancelSchedule(userId: string, postId: string) {
   return findOwnedPost(userId, postId);
 }
 
-// 投稿前チェック：SNSの仕様・アカウント接続状況
+// 投稿前チェック：SNSの仕様・投稿先アカウントの接続状況
 async function validateForPublishing(userId: string, post: PostWithPlatforms): Promise<string[]> {
   const errors: string[] = [];
-  const connected = await connectedPlatforms(userId);
+  const postable = new Set((await listPostableAccounts(userId)).map((a) => a.id));
   for (const p of post.platforms) {
     if (p.status === "PUBLISHED") continue;
-    if (!connected.has(p.platform)) {
-      errors.push(`${PLATFORM_LABELS[p.platform]}のアカウントが接続されていません。アカウント画面から接続してください。`);
+    if (!p.socialAccountId) {
+      errors.push(`${targetLabel(p)} は切断されています。投稿先を選び直してください。`);
+    } else if (!postable.has(p.socialAccountId)) {
+      errors.push(`${targetLabel(p)} は再接続が必要です。アカウント画面でキーを確認してください。`);
     }
     const result = await getAdapter(p.platform).validatePost({
       platform: p.platform,
       content: p.content,
+      mediaUrls: p.mediaUrls,
       idempotencyKey: p.idempotencyKey,
     });
-    errors.push(...result.errors);
+    errors.push(...result.errors.map((e) => e.replace(`${PLATFORM_LABELS[p.platform]}:`, `${targetLabel(p)}:`)));
   }
   return errors;
 }

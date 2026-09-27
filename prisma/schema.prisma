@@ -91,7 +91,6 @@ model User {
   brands         Brand[]
   socialAccounts SocialAccount[]
   posts          Post[]
-  oauthStates    OAuthState[]
 }
 
 model Brand {
@@ -119,42 +118,36 @@ model Brand {
   @@index([userId])
 }
 
-// SNSアカウント。SNSのパスワードは保存しない。トークンは暗号化して保存する
+// SNSアカウント。ユーザーが入力したAPIキー・アクセストークンで連携する。
+// SNSのログインパスワードは保存しない。キー一式は暗号化したJSONとして保存し、画面・APIには返さない
 model SocialAccount {
-  id                    String              @id @default(cuid())
-  userId                String
-  brandId               String?
-  platform              Platform
-  accountName           String
-  externalAccountId     String
-  accessTokenEncrypted  String
-  refreshTokenEncrypted String?
-  tokenExpiresAt        DateTime?
-  scopes                String[]            @default([])
-  status                SocialAccountStatus @default(CONNECTED)
-  isMock                Boolean             @default(false)
-  lastCheckedAt         DateTime?
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
+  id                   String              @id @default(cuid())
+  userId               String
+  brandId              String?
+  platform             Platform
+  // SNS上の表示名（@handle など）。キー確認時にAPIから取得する
+  accountName          String
+  externalAccountId    String
+  // 利用者が付ける管理用の名前（任意）
+  label                String              @default("")
+  credentialsEncrypted String
+  // 画面表示用のキー末尾4文字（例: "••••abcd"）
+  credentialHint       String              @default("")
+  tokenExpiresAt       DateTime?
+  status               SocialAccountStatus @default(CONNECTED)
+  isMock               Boolean             @default(false)
+  lastCheckedAt        DateTime?
+  // 直近のキー確認・投稿で起きたエラー（ユーザー向けの文）
+  lastError            String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  brand Brand? @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand         Brand?         @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  postPlatforms PostPlatform[]
 
   @@unique([userId, platform, externalAccountId])
   @@index([userId, platform])
-}
-
-// OAuth 認可フロー中の一時状態（CSRF対策の state と PKCE の code_verifier）
-model OAuthState {
-  id           String   @id @default(cuid())
-  state        String   @unique
-  userId       String
-  platform     Platform
-  codeVerifier String?
-  expiresAt    DateTime
-  createdAt    DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Post {
@@ -177,27 +170,35 @@ model Post {
   @@index([userId, scheduledAt])
 }
 
+// 投稿先（1つのSNSアカウント）ごとの投稿内容と結果
 model PostPlatform {
-  id             String             @id @default(cuid())
-  postId         String
-  platform       Platform
-  content        String
-  status         PostPlatformStatus @default(DRAFT)
-  // 二重投稿防止キー（postId:platform）
-  idempotencyKey String             @unique
-  attempts       Int                @default(0)
-  publishedAt    DateTime?
-  externalPostId String?
-  externalUrl    String?
+  id              String             @id @default(cuid())
+  postId          String
+  platform        Platform
+  // 投稿先アカウント。アカウントを切断しても履歴は残す（null になる）
+  socialAccountId String?
+  // 投稿時点のアカウント名（切断後も履歴で表示するため）
+  accountName     String             @default("")
+  content         String
+  // 添付する画像のURL（Instagram は必須）
+  mediaUrls       String[]           @default([])
+  status          PostPlatformStatus @default(DRAFT)
+  // 二重投稿防止キー（postId:socialAccountId）
+  idempotencyKey  String             @unique
+  attempts        Int                @default(0)
+  publishedAt     DateTime?
+  externalPostId  String?
+  externalUrl     String?
   // ユーザー向けの分かりやすいエラー文。技術的な詳細は PostLog.metadata に残す
-  errorMessage   String?
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  errorMessage    String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
-  post Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  logs PostLog[]
+  post          Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+  logs          PostLog[]
 
-  @@unique([postId, platform])
+  @@unique([postId, socialAccountId])
   @@index([status])
 }
 

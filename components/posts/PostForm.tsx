@@ -11,7 +11,9 @@ import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
 import { PLATFORM_CAPABILITIES } from "@/lib/social/capabilities";
 import { validateAgainstCapabilities } from "@/lib/social/validate";
 
-const ALL_PLATFORMS: Platform[] = ["X", "INSTAGRAM", "THREADS"];
+const PLATFORM_ORDER: Platform[] = ["X", "INSTAGRAM", "THREADS"];
+
+export type PostFormAccount = { id: string; platform: Platform; accountName: string; label: string };
 
 export type PostFormInitial = {
   id: string;
@@ -19,14 +21,15 @@ export type PostFormInitial = {
   topic: string;
   brandId: string | null;
   scheduledAt: string | null;
-  platforms: { platform: Platform; content: string }[];
+  targets: { socialAccountId: string | null; platform: Platform; accountName: string; content: string; mediaUrls: string[] }[];
 };
 
 type Props = {
   initial?: PostFormInitial;
   brands: { id: string; name: string }[];
   approvalMode: ApprovalMode;
-  connected: Platform[];
+  // 投稿先に選べるアカウント（接続済みのもの）
+  accounts: PostFormAccount[];
 };
 
 // datetime-local 用の "YYYY-MM-DDTHH:mm"（ブラウザのローカル時刻）
@@ -35,23 +38,33 @@ function toLocalInput(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+const accountLabel = (a: { label: string; accountName: string }) => (a.label ? `${a.label}（${a.accountName}）` : a.accountName);
+
 type Action = "draft" | "schedule" | "publish";
 
-export function PostForm({ initial, brands, approvalMode, connected }: Props) {
+export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
   const router = useRouter();
-  const initialContents = Object.fromEntries((initial?.platforms ?? []).map((p) => [p.platform, p.content]));
+  const initialTargets = (initial?.targets ?? []).filter((t) => t.socialAccountId);
+  const initialContents = Object.fromEntries(initialTargets.map((t) => [t.socialAccountId as string, t.content]));
   const initialValues = Object.values(initialContents);
   const initiallySeparate = initialValues.length > 1 && new Set(initialValues).size > 1;
+
+  // 編集時、再接続が必要になったアカウントも選択済みとして表示する
+  const choices: (PostFormAccount & { unavailable?: boolean })[] = [
+    ...accounts,
+    ...initialTargets
+      .filter((t) => !accounts.some((a) => a.id === t.socialAccountId))
+      .map((t) => ({ id: t.socialAccountId as string, platform: t.platform, accountName: t.accountName, label: "", unavailable: true })),
+  ].sort((a, b) => PLATFORM_ORDER.indexOf(a.platform) - PLATFORM_ORDER.indexOf(b.platform));
 
   const [title, setTitle] = useState(initial?.title ?? "");
   const [topic, setTopic] = useState(initial?.topic ?? "");
   const [brandId, setBrandId] = useState(initial?.brandId ?? brands[0]?.id ?? "");
-  const [selected, setSelected] = useState<Platform[]>(
-    initial ? initial.platforms.map((p) => p.platform) : ALL_PLATFORMS.filter((p) => connected.includes(p)),
-  );
+  const [selected, setSelected] = useState<string[]>(initialTargets.map((t) => t.socialAccountId as string));
   const [separate, setSeparate] = useState(initiallySeparate);
   const [common, setCommon] = useState(initialValues[0] ?? "");
-  const [perPlatform, setPerPlatform] = useState<Record<string, string>>(initialContents);
+  const [perAccount, setPerAccount] = useState<Record<string, string>>(initialContents);
+  const [imageUrl, setImageUrl] = useState(initialTargets.find((t) => t.mediaUrls.length > 0)?.mediaUrls[0] ?? "");
   const [scheduledAt, setScheduledAt] = useState(
     initial?.scheduledAt ? toLocalInput(new Date(initial.scheduledAt)) : toLocalInput(new Date(Date.now() + 60 * 60 * 1000)),
   );
@@ -60,32 +73,40 @@ export function PostForm({ initial, brands, approvalMode, connected }: Props) {
   const [pending, setPending] = useState<Action | null>(null);
   const [error, setError] = useState<{ message: string; details: string[] } | null>(null);
 
-  const contentFor = (p: Platform) => (separate ? (perPlatform[p] ?? common) : common);
+  const selectedAccounts = choices.filter((a) => selected.includes(a.id));
+  const needsImage = selectedAccounts.some((a) => PLATFORM_CAPABILITIES[a.platform].requiresMedia);
+  const contentFor = (id: string) => (separate ? (perAccount[id] ?? common) : common);
+  const mediaFor = (platform: Platform) => (PLATFORM_CAPABILITIES[platform].requiresMedia && imageUrl.trim() ? [imageUrl.trim()] : []);
 
   const checks = useMemo(
     () =>
-      selected.map((p) => ({
-        platform: p,
-        length: [...contentFor(p).trim()].length,
-        result: validateAgainstCapabilities({ platform: p, content: contentFor(p), idempotencyKey: "" }, PLATFORM_CAPABILITIES[p]),
+      selectedAccounts.map((a) => ({
+        account: a,
+        length: [...contentFor(a.id).trim()].length,
+        result: validateAgainstCapabilities(
+          { platform: a.platform, content: contentFor(a.id), mediaUrls: mediaFor(a.platform), idempotencyKey: "" },
+          PLATFORM_CAPABILITIES[a.platform],
+        ),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selected, separate, common, perPlatform],
+    [selected, separate, common, perAccount, imageUrl],
   );
 
-  function togglePlatform(p: Platform) {
-    setSelected((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : ALL_PLATFORMS.filter((x) => x === p || prev.includes(x))));
+  function toggleAccount(id: string) {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   function toggleSeparate(next: boolean) {
-    if (next) setPerPlatform(Object.fromEntries(selected.map((p) => [p, perPlatform[p] ?? common])));
+    if (next) setPerAccount(Object.fromEntries(selected.map((id) => [id, perAccount[id] ?? common])));
     setSeparate(next);
   }
 
   async function submit(action: Action) {
     setError(null);
     if (action !== "draft") {
-      const errors = checks.flatMap((c) => c.result.errors);
+      const errors = checks.flatMap((c) =>
+        c.result.errors.map((e) => e.replace(`${PLATFORM_LABELS[c.account.platform]}:`, `${PLATFORM_LABELS[c.account.platform]} ${c.account.accountName}:`)),
+      );
       if (errors.length > 0) {
         setError({ message: "投稿内容を確認してください", details: errors });
         return;
@@ -96,7 +117,7 @@ export function PostForm({ initial, brands, approvalMode, connected }: Props) {
       title,
       topic,
       brandId: brandId || null,
-      platforms: selected.map((p) => ({ platform: p, content: contentFor(p) })),
+      targets: selectedAccounts.map((a) => ({ socialAccountId: a.id, content: contentFor(a.id), mediaUrls: mediaFor(a.platform) })),
     };
     let postId = savedId;
     try {
@@ -127,8 +148,6 @@ export function PostForm({ initial, brands, approvalMode, connected }: Props) {
       setPending(null);
     }
   }
-
-  const missingAccounts = selected.filter((p) => !connected.includes(p));
 
   return (
     <form
@@ -170,58 +189,95 @@ export function PostForm({ initial, brands, approvalMode, connected }: Props) {
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <fieldset>
-          <legend className={label}>対象SNS</legend>
-          <div className="flex flex-wrap gap-4">
-            {ALL_PLATFORMS.map((p) => (
-              <label key={p} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={selected.includes(p)} onChange={() => togglePlatform(p)} className="h-4 w-4" />
-                {PLATFORM_LABELS[p]}
-                {!connected.includes(p) && <span className="text-xs text-slate-500">（未接続）</span>}
-              </label>
-            ))}
-          </div>
+          <legend className={label}>投稿先のアカウント</legend>
+          {choices.length === 0 ? (
+            <Alert tone="warning">
+              連携しているアカウントがありません。下書き保存はできますが、予約・投稿するには
+              <Link href="/accounts" className="font-semibold underline">SNSアカウント画面</Link>でAPIキーを登録してください。
+            </Alert>
+          ) : (
+            <div className="space-y-3">
+              {PLATFORM_ORDER.filter((p) => choices.some((a) => a.platform === p)).map((p) => (
+                <div key={p}>
+                  <p className="mb-1 text-xs font-semibold text-slate-500">{PLATFORM_LABELS[p]}</p>
+                  <div className="flex flex-wrap gap-x-5 gap-y-2">
+                    {choices
+                      .filter((a) => a.platform === p)
+                      .map((a) => (
+                        <label key={a.id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(a.id)}
+                            onChange={() => toggleAccount(a.id)}
+                            className="h-4 w-4"
+                            aria-label={`${PLATFORM_LABELS[p]} ${accountLabel(a)}`}
+                          />
+                          {accountLabel(a)}
+                          {a.unavailable && <span className="text-xs text-rose-700">（再接続が必要）</span>}
+                        </label>
+                      ))}
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-slate-500">
+                同じSNSの複数アカウントにも投稿できます。アカウントの追加は<Link href="/accounts" className="underline">SNSアカウント画面</Link>から。
+              </p>
+            </div>
+          )}
         </fieldset>
-        {missingAccounts.length > 0 && (
-          <Alert tone="warning">
-            {missingAccounts.map((p) => PLATFORM_LABELS[p]).join("・")} のアカウントが未接続です。下書き保存はできますが、予約・投稿するには
-            <Link href="/accounts" className="font-semibold underline">アカウント画面</Link>から接続してください。
-          </Alert>
-        )}
 
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={separate} onChange={(e) => toggleSeparate(e.target.checked)} className="h-4 w-4" />
-          SNSごとに内容を変える
+          アカウントごとに内容を変える
         </label>
 
-        {!separate ? (
+        {!separate || selectedAccounts.length === 0 ? (
           <div>
             <label className={label} htmlFor="content">投稿内容</label>
             <textarea id="content" rows={7} value={common} onChange={(e) => setCommon(e.target.value)} className={input} />
           </div>
         ) : (
-          selected.map((p) => (
-            <div key={p}>
-              <label className={label} htmlFor={`content-${p}`}>{PLATFORM_LABELS[p]} の投稿内容</label>
+          selectedAccounts.map((a) => (
+            <div key={a.id}>
+              <label className={label} htmlFor={`content-${a.id}`}>
+                {PLATFORM_LABELS[a.platform]} {accountLabel(a)} の投稿内容
+              </label>
               <textarea
-                id={`content-${p}`}
+                id={`content-${a.id}`}
                 rows={6}
-                value={perPlatform[p] ?? common}
-                onChange={(e) => setPerPlatform((prev) => ({ ...prev, [p]: e.target.value }))}
+                value={perAccount[a.id] ?? common}
+                onChange={(e) => setPerAccount((prev) => ({ ...prev, [a.id]: e.target.value }))}
                 className={input}
               />
             </div>
           ))
         )}
 
+        {needsImage && (
+          <div>
+            <label className={label} htmlFor="imageUrl">画像のURL（Instagram は必須）</label>
+            <input
+              id="imageUrl"
+              type="url"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://example.com/photo.jpg"
+              className={input}
+            />
+            <p className="mt-1 text-xs text-slate-500">インターネットから見られる https:// の画像URLを入力してください（JPEG推奨）。</p>
+          </div>
+        )}
+
         <ul className="space-y-1 text-xs">
           {checks.map((c) => {
-            const max = PLATFORM_CAPABILITIES[c.platform].maxTextLength;
+            const max = PLATFORM_CAPABILITIES[c.account.platform].maxTextLength;
             const over = max !== null && c.length > max;
             return (
-              <li key={c.platform} className={over ? "text-rose-700" : "text-slate-500"}>
-                {PLATFORM_LABELS[c.platform]}：{c.length}{max !== null && ` / ${max}`}文字
+              <li key={c.account.id} className={over ? "text-rose-700" : "text-slate-500"}>
+                {PLATFORM_LABELS[c.account.platform]} {c.account.accountName}：{c.length}
+                {max !== null && ` / ${max}`}文字
                 {c.result.warnings.map((w) => (
-                  <span key={w} className="ml-2 text-amber-700">※{w.replace(`${PLATFORM_LABELS[c.platform]}: `, "")}</span>
+                  <span key={w} className="ml-2 text-amber-700">※{w.replace(`${PLATFORM_LABELS[c.account.platform]}: `, "")}</span>
                 ))}
               </li>
             );

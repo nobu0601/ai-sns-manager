@@ -6,7 +6,7 @@ import { requirePageUserId } from "@/lib/auth/session";
 import { getDashboardStats } from "@/lib/dashboard/dashboard-service";
 import { formatDateTime } from "@/lib/datetime";
 import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
-import { ACCOUNT_STATUS_LABELS, POST_STATUS_LABELS, STATUS_TONES } from "@/lib/labels";
+import { POST_STATUS_LABELS, STATUS_TONES } from "@/lib/labels";
 import { listPosts } from "@/lib/posts/post-service";
 import { PLATFORMS } from "@/lib/social/registry";
 
@@ -45,14 +45,16 @@ export default async function DashboardPage() {
         <Card title="接続SNS" action={<Link href="/accounts" className="text-sm font-semibold text-brand-600">管理する</Link>}>
           <ul className="space-y-3">
             {PLATFORMS.map((p) => {
-              const account = stats.accounts.find((a) => a.platform === p);
-              const connected = account?.status === "CONNECTED";
+              const list = stats.accounts.filter((a) => a.platform === p);
+              const connected = list.filter((a) => a.status === "CONNECTED").length;
+              const needsAttention = list.length - connected;
               return (
-                <li key={p} className="flex items-center justify-between">
+                <li key={p} className="flex items-center justify-between gap-3">
                   <span className="font-medium">{PLATFORM_LABELS[p]}</span>
-                  <span className={`text-sm ${connected ? "text-emerald-700" : account ? "text-rose-700" : "text-slate-500"}`}>
-                    {connected ? "● " : "○ "}
-                    {account ? ACCOUNT_STATUS_LABELS[account.status] : "未接続"}
+                  <span className={`text-right text-sm ${needsAttention ? "text-rose-700" : connected ? "text-emerald-700" : "text-slate-500"}`}>
+                    {list.length === 0
+                      ? "○ 未接続"
+                      : `● ${connected}アカウント接続済み${needsAttention ? `（${needsAttention}件 要確認）` : ""}`}
                   </span>
                 </li>
               );

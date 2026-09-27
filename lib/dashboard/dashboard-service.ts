@@ -35,7 +35,7 @@ export async function getDashboardStats(userId: string, now: Date = new Date()) 
 export async function getCalendarPosts(userId: string, range: { start: Date; end: Date }) {
   return prisma.post.findMany({
     where: { userId, scheduledAt: { gte: range.start, lt: range.end } },
-    include: { platforms: { select: { platform: true, status: true } } },
+    include: { platforms: { select: { platform: true, status: true, accountName: true } } },
     orderBy: { scheduledAt: "asc" },
   });
 }

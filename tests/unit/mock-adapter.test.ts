@@ -1,34 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { MOCK_DENIED_CODE, MOCK_TRIGGERS, MockSocialAdapter } from "@/lib/social/mock/mock-adapter";
+import { MOCK_INVALID_KEY, MOCK_TRIGGERS, MockSocialAdapter } from "@/lib/social/mock/mock-adapter";
 import { SocialPublishError } from "@/lib/social/errors";
-import type { ConnectedAccount } from "@/lib/social/types";
 
-const account: ConnectedAccount = {
-  platform: "X",
-  accountName: "@test",
-  externalAccountId: "x1",
-  accessToken: "token",
-};
-const post = (content: string) => ({ platform: "X" as const, content, idempotencyKey: "p1:X" });
+const post = (content: string) => ({ platform: "X" as const, content, idempotencyKey: "p1:a1" });
+const account = { accountName: "@mock", externalAccountId: "mock-1" };
+const creds = { accessToken: "token-abc" };
 
 describe("MockSocialAdapter", () => {
-  it("OAuth: 認可URLは state 付きでコールバックへ戻る", async () => {
+  it("キー確認：同じキーは同じアカウント、違うキーは別アカウントになる", async () => {
+    const adapter = new MockSocialAdapter("THREADS");
+    const a = await adapter.verifyCredentials({ accessToken: "key-1" });
+    const b = await adapter.verifyCredentials({ accessToken: "key-1" });
+    const c = await adapter.verifyCredentials({ accessToken: "key-2" });
+    expect(a).toEqual(b);
+    expect(a.externalAccountId).not.toBe(c.externalAccountId);
+    expect(a.accountName).toMatch(/^@mock_threads_/);
+  });
+
+  it("キー確認：無効なキー・空のキーは AUTH エラー", async () => {
     const adapter = new MockSocialAdapter("X");
-    const req = await adapter.getAuthorizationUrl({ state: "abc", redirectUri: "http://localhost:3000/api/social/x/callback" });
-    const url = new URL(req.url);
-    expect(url.pathname).toBe("/api/social/x/callback");
-    expect(url.searchParams.get("state")).toBe("abc");
-    expect(url.searchParams.get("code")).toMatch(/^mock-code-/);
-  });
-
-  it("OAuth: コールバックでアカウント情報とトークンを返す", async () => {
-    const connected = await new MockSocialAdapter("THREADS").handleCallback({ code: "mock-code-1" });
-    expect(connected.platform).toBe("THREADS");
-    expect(connected.accessToken).toMatch(/^mock-access-/);
-  });
-
-  it("OAuth: 拒否コードなら AUTH エラー", async () => {
-    await expect(new MockSocialAdapter("X").handleCallback({ code: MOCK_DENIED_CODE })).rejects.toMatchObject({ kind: "AUTH" });
+    await expect(adapter.verifyCredentials({ accessToken: `x-${MOCK_INVALID_KEY}` })).rejects.toMatchObject({ kind: "AUTH" });
+    await expect(adapter.verifyCredentials({ accessToken: " " })).rejects.toMatchObject({ kind: "AUTH" });
   });
 
   it("投稿成功をシミュレーションする", async () => {
@@ -58,8 +50,10 @@ describe("MockSocialAdapter", () => {
     }
   });
 
-  it("refreshToken で新しいトークンを返す", async () => {
-    const refreshed = await new MockSocialAdapter("X").refreshToken(account);
-    expect(refreshed.accessToken).not.toBe(account.accessToken);
+  it("Instagram は画像なしだと投稿前チェックでエラー", async () => {
+    const result = await new MockSocialAdapter("INSTAGRAM").validatePost({ platform: "INSTAGRAM", content: "a", idempotencyKey: "k" });
+    expect(result.valid).toBe(false);
+    void creds;
+    void account;
   });
 });

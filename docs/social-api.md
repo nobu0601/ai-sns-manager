@@ -11,16 +11,25 @@
 SOCIAL_PROVIDER_MODE=mock  # デフォルト
 ```
 
-### Mock OAuth フロー
+### Mock キー認証
 
-1. `/api/social/{platform}/connect` で Mock 認可 URL を取得
-2. ブラウザが `/api/social/{platform}/callback` へリダイレクト
-3. Mock コールバック処理で認可完了
+1. `/api/social/{platform}/connect` で API キーを入力
+2. Mock は入力値をハッシュしてアカウント ID を生成
+3. 同じキーなら同じアカウント、違うキーなら別アカウント
 
-```
-getAuthorizationUrl() → URL を即座に callback へ改変
-  ↓
-handleCallback() → mock アカウント情報返却
+**キーに "invalid" を含むと認証エラーになります:**
+
+```json
+POST /api/social/X/connect
+{
+  "credentials": {
+    "apiKey": "invalid_key",
+    "apiSecret": "...",
+    "accessToken": "...",
+    "accessTokenSecret": "..."
+  }
+}
+→ 400 INVALID_CREDENTIALS
 ```
 
 ### 失敗シミュレーション
@@ -53,95 +62,53 @@ MOCK_TRANSIENT_FAILURE_RATE=0.3  # 30% の確率で一時失敗
 
 ## Live Mode（本番・Step 11 以降）
 
-現在 **未実装**。以下は実装時の参照。
+ユーザーが UI からアカウント登録時に API キーを入力。Adapter が実際の SNS API を呼び出す。
 
-### 実装ステップ
+### 実装済みアダプター
 
-- **Step 11**: X API
-- **Step 12**: Instagram Graph API
-- **Step 13**: Threads API
+- **Step 11**: X API v2（OAuth 1.0a）
+- **Step 12**: Instagram Graph API（アクセストークン）
+- **Step 13**: Threads API（アクセストークン）
 
-### Adapter 実装チェックリスト
+### 各アダプターで使用される API
 
-各 SNS 実装時に必ず確認すること：
+#### X Adapter (`lib/social/x/x-adapter.ts`)
 
-#### 1. OAuth フロー（公式ドキュメント確認）
+参考: X 公式 SDK（@xdevplatform/xdk）
 
-- [ ] Authorization endpoint URL
-- [ ] Token endpoint URL
-- [ ] Required scopes
-- [ ] Code flow vs PKCE
-- [ ] Refresh token support
-- [ ] Token expiration handling
-- [ ] Rate limit on auth endpoints
+- `GET /2/users/me` - アカウント確認
+- `POST /2/tweets` - テキスト投稿
 
-#### 2. Post 作成 API（公式ドキュメント確認）
+#### Threads Adapter (`lib/social/threads/threads-adapter.ts`)
 
-- [ ] Endpoint URL
-- [ ] Request body format
-- [ ] Text content constraints (max length, character encoding)
-- [ ] Media upload support (endpoint, format, size limits)
-- [ ] Required vs optional fields
-- [ ] Idempotency key support
-- [ ] Response format (ID extraction)
-- [ ] Error codes and messages
+参考: Meta 公式サンプル（github.com/fbsamples/threads_api）
 
-#### 3. Post 削除 API（公式ドキュメント確認）
+- `GET me?fields=id,username` - アカウント確認
+- `POST me/threads` - 投稿コンテナ作成
+- `POST me/threads_publish` - 投稿確定
+- `GET {id}?fields=status` - コンテナ状態確認
+- `GET {id}?fields=permalink` - 投稿 URL 取得
 
-- [ ] Delete endpoint availability
-- [ ] Required permissions
-- [ ] Response format
+#### Instagram Adapter (`lib/social/instagram/instagram-adapter.ts`)
 
-#### 4. Rate Limits & Quotas（公式ドキュメント確認）
+参考: Meta 公式ドキュメント（Content Publishing / Media Publish）
 
-- [ ] Posts per day / month
-- [ ] Requests per hour / minute
-- [ ] Media upload limits
-- [ ] Burst vs sustained rate limits
-- [ ] Reset timing
-- [ ] Rate limit headers in responses
-
-#### 5. Pricing（確認事項）
-
-- [ ] Free tier usage limits
-- [ ] Paid plan requirements
-- [ ] Cost per API call
-- [ ] Media hosting costs
-
-#### 6. テスト
-
-- [ ] Sandbox / Development environment available
-- [ ] Test credentials setup
-- [ ] Error case testing (4xx, 5xx)
-- [ ] Token expiration / refresh flow
-- [ ] Media upload edge cases
-- [ ] Concurrent request handling
-
-### Redirect URI 形式
-
-```
-https://{HOST}/api/social/{platform}/callback
-```
-
-**例:**
-- `https://example.com/api/social/X/callback`
-- `https://example.com/api/social/INSTAGRAM/callback`
-- `https://example.com/api/social/THREADS/callback`
+- `GET me?fields=user_id,username` - アカウント確認
+- `POST {ig-user-id}/media` - 画像コンテナ作成
+- `GET {container-id}?fields=status_code` - コンテナ状態確認
+- `POST {ig-user-id}/media_publish` - 投稿確定
+- `GET {id}?fields=permalink` - 投稿 URL 取得
 
 ### 環境変数
 
-各 SNS ごとに OAuth クライアント認証情報を `.env` に設定：
+Meta Graph API のバージョン指定（任意）：
 
 ```bash
-X_CLIENT_ID=<from twitter developer portal>
-X_CLIENT_SECRET=<secret>
-
-INSTAGRAM_CLIENT_ID=<from facebook app>
-INSTAGRAM_CLIENT_SECRET=<secret>
-
-THREADS_CLIENT_ID=<from threads app>
-THREADS_CLIENT_SECRET=<secret>
+THREADS_API_VERSION=
+INSTAGRAM_API_VERSION=
 ```
+
+API キーの設定：ユーザーが UI からアカウント登録時に入力（環境変数不要）
 
 ---
 
@@ -175,25 +142,13 @@ interface SocialPlatformAdapter {
   readonly platform: Platform;
   readonly capabilities: SocialPlatformCapabilities;
 
-  // OAuth フロー
-  getAuthorizationUrl(input: { state: string; redirectUri: string }): 
-    Promise<AuthorizationRequest>;
-  
-  handleCallback(input: { 
-    code: string; 
-    redirectUri: string; 
-    codeVerifier?: string 
-  }): Promise<ConnectedAccount>;
+  // ユーザーが入力したキーを SNS に問い合わせて確認
+  verifyCredentials(credentials: PlatformCredentials): Promise<VerifiedAccount>;
 
-  // Token 管理
-  refreshToken(account: ConnectedAccount): Promise<ConnectedAccount>;
+  // 投稿を作成
+  createPost(post: PlatformPost, credentials: PlatformCredentials, account: VerifiedAccount): Promise<PublishedPost>;
 
-  // 投稿操作
-  createPost(post: PlatformPost, account: ConnectedAccount): Promise<PublishedPost>;
-  
-  deletePost?(externalPostId: string, account: ConnectedAccount): Promise<void>;
-
-  // 検証
+  // 投稿内容を検証（テキスト長など）
   validatePost(post: PlatformPost): Promise<ValidationResult>;
 }
 ```
@@ -201,21 +156,28 @@ interface SocialPlatformAdapter {
 ### 型定義
 
 ```typescript
-export interface ConnectedAccount {
-  platform: Platform;
+// ユーザーが入力するキー（平文。保存時は暗号化）
+export type XCredentials = { 
+  apiKey: string; 
+  apiSecret: string; 
+  accessToken: string; 
+  accessTokenSecret: string 
+};
+export type TokenCredentials = { accessToken: string };
+export type PlatformCredentials = XCredentials | TokenCredentials;
+
+// キー確認で分かったアカウント情報
+export interface VerifiedAccount {
   accountName: string;
   externalAccountId: string;
-  accessToken: string;
-  refreshToken?: string;
   tokenExpiresAt?: Date;
-  scopes?: string[];
 }
 
 export interface PlatformPost {
   platform: Platform;
   content: string;
   mediaUrls?: string[];
-  idempotencyKey: string;  // postId:platform
+  idempotencyKey: string;  // postId:socialAccountId
 }
 
 export interface PublishedPost {
@@ -267,12 +229,10 @@ RATE_LIMIT, TRANSIENT, UNKNOWN
 
 ## セキュリティ事項
 
-- **トークン保存**: 必ず暗号化（AES-256-GCM）。平文保存厳禁。
-- **API キー**: `.env` から読み込み。コードに埋め込まない。
-- **Scope 最小化**: 最小限の権限のみリクエスト。
-- **HTTPS 必須**: OAuth callback は HTTPS のみ。
-- **State 検証**: CSRF state を必ず検証。
-- **Refresh token**: 利用可能な場合は積極的に更新。
+- **キー保存**: 必ず暗号化（AES-256-GCM）。平文保存厳禁。
+- **キー入力**: HTTPS 通信のみ。API キーは画面で直接入力し、ブラウザの履歴に保存されないよう注意。
+- **権限最小化**: SNS 側で設定可能な場合は、最小限の権限のみを有効にしておく。
+- **キーの保護**: SocialAccount.credentialHint は末尾 4 文字のみ表示。完全なキーは画面に表示しない。
 
 ---
 
@@ -281,27 +241,37 @@ RATE_LIMIT, TRANSIENT, UNKNOWN
 ### Mock Mode テスト
 
 ```typescript
-// Mock で常に成功
+// Mock でキー検証
 const adapter = new MockSocialAdapter("X");
+const verified = await adapter.verifyCredentials({
+  apiKey: "key1",
+  apiSecret: "secret1",
+  accessToken: "token1",
+  accessTokenSecret: "secret_token1"
+});
+// → { accountName: "@mock_x_xxxx", externalAccountId: "mock-xxxxx" }
+
+// Mock で常に成功
 const result = await adapter.createPost({
   platform: "X",
   content: "Hello world",
-  idempotencyKey: "post1:X"
-}, account);
+  idempotencyKey: "post1:account123"
+}, credentials, verified);
 // → success
 
 // Mock で失敗を再現
 const failResult = await adapter.createPost({
   platform: "X",
   content: "Hello #mock-auth-error world",
-  idempotencyKey: "post2:X"
-}, account);
+  idempotencyKey: "post2:account123"
+}, credentials, verified);
 // → SocialPublishError("AUTH")
 ```
 
 ### Live Mode テスト（Step 11 以降）
 
-- Sandbox API エンドポイント使用
-- Test アカウント作成
-- Token expiration / refresh フロー検証
+- 実際のテストアカウント作成
+- API キーを `/api/social/{platform}/connect` で登録
+- `POST /api/social/accounts/{id}/verify` でキー検証
+- `POST /api/posts` で投稿実行
 - Error case (401, 403, 429, 5xx) 確認

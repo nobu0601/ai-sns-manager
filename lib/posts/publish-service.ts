@@ -56,17 +56,22 @@ export async function publishPostPlatform(
   const platform = target.platform;
   let accountId: string | null = null;
   try {
-    const account = await getPublishingAccount(target.post.userId, platform, target.post.brandId);
-    accountId = account.id;
+    const publishing = await getPublishingAccount(target.post.userId, platform, target.socialAccountId);
+    accountId = publishing.id;
     const adapter = getAdapter(platform);
-    const platformPost = { platform, content: target.content, idempotencyKey: target.idempotencyKey };
+    const platformPost = {
+      platform,
+      content: target.content,
+      mediaUrls: target.mediaUrls,
+      idempotencyKey: target.idempotencyKey,
+    };
 
     const validation = await adapter.validatePost(platformPost);
     if (!validation.valid) {
       throw new SocialPublishError("CONTENT", platform, validation.errors.join(" / "));
     }
 
-    const published = await adapter.createPost(platformPost, account.connected);
+    const published = await adapter.createPost(platformPost, publishing.credentials, publishing.account);
     await prisma.postPlatform.update({
       where: { id: target.id },
       data: {
@@ -85,16 +90,17 @@ export async function publishPostPlatform(
       metadata: { externalPostId: published.externalPostId, externalUrl: published.externalUrl, response: published.raw },
     });
     await refreshPostStatus(target.postId);
-    logger.info("publish.success", { postPlatformId: target.id, platform });
+    logger.info("publish.success", { postPlatformId: target.id, platform, accountId });
     return { outcome: "published", externalPostId: published.externalPostId };
   } catch (err) {
     const error = toSocialError(err, platform);
     const final = !error.retryable || attempt >= maxAttempts;
     const userMessage = userMessageFor(error.kind, platform, { willRetry: !final });
     // 元エラーは詳細ログにのみ残す（ユーザーには分かりやすい文を見せる）
-    const detail = { kind: error.kind, error: error.message, attempt, maxAttempts };
+    // SNS APIのエラーレスポンスも残す（秘密情報は writePostLog でマスクされる）
+    const detail = { kind: error.kind, error: error.message, response: error.detail, attempt, maxAttempts };
 
-    if (error.kind === "AUTH" && accountId) await markAccountExpired(accountId);
+    if (error.kind === "AUTH" && accountId) await markAccountExpired(accountId, userMessage);
 
     await prisma.postPlatform.update({
       where: { id: target.id },

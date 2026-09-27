@@ -50,12 +50,13 @@ workers/post-worker.ts                 BullMQ Worker。投稿の実行は必ず�
 
 ## 5. セキュリティルール
 
-- SNS のログイン情報・パスワードを保存しない。接続は OAuth のみ
-- OAuth トークンは `lib/encryption/crypto.ts`（AES-256-GCM, `ENCRYPTION_KEY`）で暗号化して保存。画面・API レスポンスに出さない（`SocialAccountView` を使う）
+- SNS のログイン情報・パスワードを保存しない。連携はユーザーが入力する APIキー／アクセストークンで行う
+- キーは SNS に問い合わせて確認（`verifyCredentials`）してから、JSON ごと `lib/encryption/crypto.ts`（AES-256-GCM, `ENCRYPTION_KEY`）で暗号化して `SocialAccount.credentialsEncrypted` に保存する。画面・API レスポンスには出さない（`SocialAccountView` と末尾4文字の `credentialHint` だけを返す）
+- キーの入力欄は `type="password"`・`autoComplete="off"`。送信後はフォームの値を消す
 - API キー・秘密情報はすべて環境変数。`.env` はコミットしない。新しい変数は `.env.example` と README に追記する
 - ログ出力は `lib/logging/logger.ts` を使う（token / secret / password 等のキーは自動マスク）。`console.log` を直接使わない
 - すべての API で `requireUserId()` を呼び、クエリは必ず `userId` で絞る（他ユーザーのデータは 404）
-- OAuth の `state` は一度きり・10 分で失効。PKCE の `code_verifier` も暗号化して保存
+- SNS API の例外メッセージにアクセストークンを含めない（`lib/social/http.ts` は URL のクエリを伏せる）
 
 ## 6. テストルール
 
@@ -71,10 +72,15 @@ workers/post-worker.ts                 BullMQ Worker。投稿の実行は必ず�
 - 文字数・メディア要件・レート制限などは変わりうるので `capabilities.ts` で管理し、実装時に再確認して更新する
 - `SOCIAL_PROVIDER_MODE=mock` で API を呼ばずに開発・テストできる状態を維持する
 - エラーは `SocialErrorKind` に分類する。AUTH / PERMISSION / CONTENT は再試行しない（無限リトライ禁止）
-- 二重投稿防止：冪等キー `postId:platform`。Worker は `updateMany` による状態の取得（claim）後にのみ投稿する
-- 新しい SNS の追加：Prisma の `Platform` enum に追加 → Adapter 実装 → `registry.ts` と `capabilities.ts` に登録 → `PLATFORM_LABELS` に表示名
+- 投稿先は SNS 単位ではなく **SNSアカウント単位**（`PostPlatform.socialAccountId`）。同じ SNS に複数アカウントがありうる前提で書く
+- 二重投稿防止：冪等キー `postId:socialAccountId`。Worker は `updateMany` による状態の取得（claim）後にのみ投稿する
+- SNS への HTTP 呼び出しは `lib/social/http.ts`（`callApi`）を通し、エラー分類を揃える。Adapter は `fetch` を差し替えられるようにし、偽のサーバーで単体テストする
+- 各 Adapter の先頭コメントに、呼び出す API と「どの公式情報で確認したか」を書く
+- 新しい SNS の追加：Prisma の `Platform` enum に追加 → Adapter 実装 → `registry.ts`・`capabilities.ts`・`credential-fields.ts`（入力するキー）に登録 → `PLATFORM_LABELS` に表示名
 
 ## 8. AI ルール（Phase 2 以降）
+
+- AI は Claude（Anthropic）を使う。キーは `.env` の `ANTHROPIC_API_KEY`（ユーザーごとの入力欄は作らない）
 
 - プロンプトはコードに直書きせず `prompts/`（post-generation / x / instagram / threads / image / video）に置く
 - AI の出力は Structured Output / JSON Schema で受け、zod で検証してから保存する。検証失敗時はリトライ

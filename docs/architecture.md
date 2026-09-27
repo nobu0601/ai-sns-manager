@@ -123,16 +123,21 @@ User / Post / SocialAccount などのモデルを永続化。
 
 ## Adapter パターン
 
-各 SNS は `SocialPlatformAdapter` を実装。
+各 SNS は `SocialPlatformAdapter` を実装。API キー（または OAuth 1.0a トークン）で認証。
 
 ```typescript
 interface SocialPlatformAdapter {
-  getAuthorizationUrl(input): Promise<AuthorizationRequest>;
-  handleCallback(input): Promise<ConnectedAccount>;
-  refreshToken(account): Promise<ConnectedAccount>;
-  createPost(post, account): Promise<PublishedPost>;
-  deletePost?(externalPostId, account): Promise<void>;
-  validatePost(post): Promise<ValidationResult>;
+  readonly platform: Platform;
+  readonly capabilities: SocialPlatformCapabilities;
+
+  // ユーザーが入力したキーを検証。有効ならアカウント情報を返す
+  verifyCredentials(credentials: PlatformCredentials): Promise<VerifiedAccount>;
+
+  // 投稿を作成
+  createPost(post: PlatformPost, credentials: PlatformCredentials, account: VerifiedAccount): Promise<PublishedPost>;
+
+  // 投稿内容を検証（テキスト長など）
+  validatePost(post: PlatformPost): Promise<ValidationResult>;
 }
 ```
 
@@ -145,8 +150,7 @@ interface SocialPlatformAdapter {
 
 - **Live Mode** (本番・Step 11-13 以降)
   - `XAdapter`, `InstagramAdapter`, `ThreadsAdapter`
-  - 公式 OAuth フロー
-  - 実際の API 呼び出し（現在は NOT_IMPLEMENTED）
+  - 実際の SNS API を呼び出し（X API v2、Meta Graph API）
 
 ### Registry (platform 選択)
 
@@ -167,10 +171,11 @@ export function getAdapter(platform: Platform): SocialPlatformAdapter {
 3. Auth.js が JWT セッション発行
 4. 各 API で `requireUserId()` で UUID 取得
 
-### トークン暗号化
+### API キー保存
 
-OAuth トークン（access_token / refresh_token）を DB に保存する際は AES-256-GCM で暗号化。
+SNS のキー（API キー / OAuth 1.0a トークン など）を DB に保存する際は AES-256-GCM で暗号化。
 保存形式: `v1.<iv>.<authTag>.<ciphertext>`（全て base64）
+`SocialAccount.credentialsEncrypted` に JSON フォーマットで格納。
 
 ### ログ・秘密情報マスク
 
@@ -234,7 +239,7 @@ RETRYABLE: ["RATE_LIMIT", "TRANSIENT", "UNKNOWN"]
 
 ## 二重投稿防止（Idempotency）
 
-各 `PostPlatform` に一意キー: `idempotencyKey = "${postId}:${platform}"`
+各 `PostPlatform` に一意キー: `idempotencyKey = "${postId}:${socialAccountId}"`
 
 - BullMQ の `jobId` として使用（同じ jobId は重複登録されない）
 - DB の `PostPlatform.idempotencyKey` でも UNIQUE 制約
@@ -307,8 +312,8 @@ ai-sns-manager/
 ## 新しい SNS の追加方法
 
 1. `lib/social/{platform}/{platform}-adapter.ts` を作成
-   - `LiveAdapterBase` を継承し、`getAuthorizationUrl()` / `handleCallback()` / `createPost()` を実装
-2. `lib/social/registry.ts` の `liveAdapters` に登録
-3. `lib/social/capabilities.ts` で機能制約を定義
-4. OAuth クライアント ID / Secret を `.env` に設定
-5. `/api/social/{platform}/callback` で コールバック処理
+   - `SocialPlatformAdapter` を実装し、`verifyCredentials()` / `createPost()` / `validatePost()` を実装
+2. `lib/social/{platform}/credential-fields.ts` でキー入力項目を定義
+3. `lib/social/registry.ts` の `liveAdapters` に登録
+4. `lib/social/capabilities.ts` で機能制約を定義
+5. API リファレンスの URL と必要な権限をコメント欄に記載

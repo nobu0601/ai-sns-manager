@@ -15,13 +15,30 @@ export default async function SettingsPage() {
     listBrands(userId),
   ]);
 
+  const aiConfigured = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+
   return (
     <>
       <PageHeader title="設定" description="投稿モードとブランド情報（AI生成の設定）を管理します" />
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="投稿モード">
-          <ApprovalModeForm current={user.approvalMode} />
-        </Card>
+        <div className="space-y-6">
+          <Card title="投稿モード">
+            <ApprovalModeForm current={user.approvalMode} />
+          </Card>
+          <Card title="AI（Claude）">
+            <p className="text-sm">
+              APIキー：
+              {aiConfigured ? (
+                <span className="font-semibold text-emerald-700">● 設定済み</span>
+              ) : (
+                <span className="font-semibold text-slate-500">○ 未設定</span>
+              )}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              AIによる投稿文の生成（Phase 2）に使います。サーバーの .env の ANTHROPIC_API_KEY に設定してください。キーは画面には表示しません。
+            </p>
+          </Card>
+        </div>
         <div className="space-y-6">
           <Card title="ブランド">
             <BrandList brands={brands} />

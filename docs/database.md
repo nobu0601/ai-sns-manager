@@ -132,7 +132,6 @@ ERROR
 - `brands`: Brand[]
 - `socialAccounts`: SocialAccount[]
 - `posts`: Post[]
-- `oauthStates`: OAuthState[]
 
 **Indexes:**
 - `email` (UNIQUE)
@@ -173,7 +172,7 @@ ERROR
 
 ### SocialAccount
 
-SNS アカウント。トークンは暗号化。パスワード未保存。
+SNS アカウント。API キー類は暗号化。パスワード・秘密情報は未保存。
 
 | Column | Type | 説明 |
 |--------|------|------|
@@ -182,20 +181,22 @@ SNS アカウント。トークンは暗号化。パスワード未保存。
 | brandId | String? (fk) | ブランド ID（省略可。複数アカウント対応） |
 | platform | Platform | X / INSTAGRAM / THREADS |
 | accountName | String | @ユーザー名など |
+| label | String | ユーザーが付ける管理用名前（任意） |
 | externalAccountId | String | SNS 側の ID |
-| accessTokenEncrypted | String | OAuth access token（AES-256-GCM） |
-| refreshTokenEncrypted | String? | OAuth refresh token（暗号化） |
+| credentialsEncrypted | String | API キー/トークン（JSON を AES-256-GCM で暗号化） |
+| credentialHint | String | 画面表示用のキー末尾 4 文字（例: "••••abcd"） |
 | tokenExpiresAt | DateTime? | トークン期限 |
-| scopes | String[] | OAuth スコープ |
 | status | SocialAccountStatus | デフォルト: CONNECTED |
 | isMock | Boolean | Mock API を使用中か |
 | lastCheckedAt | DateTime? | 最後に検証した日時 |
+| lastError | String? | 直近のエラーメッセージ（ユーザー向け） |
 | createdAt | DateTime | 作成日時 |
 | updatedAt | DateTime | 更新日時 |
 
 **Relations:**
 - `user`: User
 - `brand`: Brand?
+- `postPlatforms`: PostPlatform[]
 
 **Unique Constraints:**
 - `(userId, platform, externalAccountId)`
@@ -205,27 +206,6 @@ SNS アカウント。トークンは暗号化。パスワード未保存。
 
 ---
 
-### OAuthState
-
-OAuth フロー中の一時状態（CSRF state + PKCE code_verifier）。
-
-| Column | Type | 説明 |
-|--------|------|------|
-| id | String (cuid) | Primary Key |
-| state | String | CSRF state（ユニーク） |
-| userId | String (fk) | ユーザー ID |
-| platform | Platform | 連携中の SNS |
-| codeVerifier | String? | PKCE code_verifier（暗号化） |
-| expiresAt | DateTime | 有効期限（10 分） |
-| createdAt | DateTime | 作成日時 |
-
-**Relations:**
-- `user`: User
-
-**Unique Constraints:**
-- `state`
-
----
 
 ### Post
 
@@ -257,16 +237,19 @@ OAuth フロー中の一時状態（CSRF state + PKCE code_verifier）。
 
 ### PostPlatform
 
-SNS 別の投稿内容・状態。
+SNS アカウント別の投稿内容・状態。同じ Post を複数アカウントに投稿可能。
 
 | Column | Type | 説明 |
 |--------|------|------|
 | id | String (cuid) | Primary Key |
 | postId | String (fk) | 投稿 ID |
 | platform | Platform | X / INSTAGRAM / THREADS |
+| socialAccountId | String? (fk) | SNS アカウント ID（切断後は null） |
+| accountName | String | 投稿時点のアカウント名（切断後も履歴で表示） |
 | content | String | 投稿本文（最大 10000 字） |
+| mediaUrls | String[] | 添付画像 URL（Instagram は必須） |
 | status | PostPlatformStatus | デフォルト: DRAFT |
-| idempotencyKey | String | 二重投稿防止（`${postId}:${platform}`） |
+| idempotencyKey | String | 二重投稿防止（`${postId}:${socialAccountId}`） |
 | attempts | Int | 試行回数。デフォルト: 0 |
 | publishedAt | DateTime? | 投稿日時 |
 | externalPostId | String? | SNS 側の投稿 ID |
@@ -277,11 +260,12 @@ SNS 別の投稿内容・状態。
 
 **Relations:**
 - `post`: Post
+- `socialAccount`: SocialAccount?
 - `logs`: PostLog[]
 
 **Unique Constraints:**
 - `idempotencyKey` (BullMQ jobId としても使用)
-- `(postId, platform)`
+- `(postId, socialAccountId)`
 
 **Indexes:**
 - `status` (POSTING / SCHEDULED の検索)
@@ -368,16 +352,17 @@ REJECTED
 
 ### 暗号化
 
-OAuth トークン（`accessTokenEncrypted` / `refreshTokenEncrypted`）:
+API キー（`SocialAccount.credentialsEncrypted`）:
+- **内容**: キー類を JSON フォーマットで格納（X: `{apiKey, apiSecret, accessToken, accessTokenSecret}` / Threads & Instagram: `{accessToken}`）
 - **Algorithm**: AES-256-GCM
 - **Format**: `v1.<iv>.<authTag>.<ciphertext>` (全て base64)
 - **Key**: 環境変数 `ENCRYPTION_KEY`（32 バイト base64）
 
-実装: `lib/encryption/crypto.ts`
+実装: `lib/encryption/crypto.ts` / `lib/social/account-service.ts`
 
 ### 二重投稿防止
 
-`PostPlatform.idempotencyKey = "${postId}:${platform}"` で原子性確保。
+`PostPlatform.idempotencyKey = "${postId}:${socialAccountId}"` で原子性確保。
 
 BullMQ にも同じキーを jobId として登録。同じ jobId は重複登録されない。
 

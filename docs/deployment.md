@@ -20,10 +20,11 @@ AI SNS Manager の本番運用には次の 4 つが必要です。
 | `DATABASE_URL` | PostgreSQL 接続文字列 |
 | `REDIS_URL` | Redis 接続文字列 |
 | `AUTH_SECRET` | `openssl rand -base64 32` で生成 |
-| `AUTH_URL` | 公開URL（例 `https://sns.example.com`）。OAuth のリダイレクトURIにも使われる |
+| `AUTH_URL` | 公開URL（例 `https://sns.example.com`） |
 | `AUTH_TRUST_HOST` | リバースプロキシ配下（Render / Railway 等）では `true` |
-| `ENCRYPTION_KEY` | `openssl rand -base64 32` で生成。**運用開始後に変更しない**（保存済みトークンが復号できなくなる） |
-| `SOCIAL_PROVIDER_MODE` | 現在は `mock` のみ対応（`live` は Step 11〜13 で実装） |
+| `ENCRYPTION_KEY` | `openssl rand -base64 32` で生成。**運用開始後に変更しない**（保存済みの SNS APIキーが復号できなくなる） |
+| `SOCIAL_PROVIDER_MODE` | `live` で実際に投稿する（`mock` は投稿しない）。SNS の APIキーは画面から登録する |
+| `ANTHROPIC_API_KEY` | Claude の APIキー（AI 投稿生成・Phase 2 で使用） |
 
 Web と Worker には**同じ値**を設定してください（特に `DATABASE_URL`、`REDIS_URL`、`ENCRYPTION_KEY`、`SOCIAL_PROVIDER_MODE`）。
 
@@ -60,7 +61,7 @@ Worker は Render / Railway / 自前サーバーなど別の場所で動かし�
 
 - Web：ログイン画面（`/login`）が表示されること
 - Worker：起動ログに `worker.ready` が出ること
-- 投稿を「今すぐ投稿」し、数秒で「投稿済み」になること（Mock モード）
+- 投稿を「今すぐ投稿」し、数秒で「投稿済み」になること（live モードではテスト用アカウントで確認する）
 
 専用のヘルスチェックAPIはまだありません（TODO.md に記載）。
 

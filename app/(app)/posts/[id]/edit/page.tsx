@@ -33,7 +33,13 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
           topic: post.topic,
           brandId: post.brandId,
           scheduledAt: post.scheduledAt?.toISOString() ?? null,
-          platforms: post.platforms.map((p) => ({ platform: p.platform, content: p.content })),
+          targets: post.platforms.map((p) => ({
+            socialAccountId: p.socialAccountId,
+            platform: p.platform,
+            accountName: p.accountName,
+            content: p.content,
+            mediaUrls: p.mediaUrls,
+          })),
         }}
       />
     </>
