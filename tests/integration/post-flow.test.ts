@@ -133,7 +133,9 @@ describe.skipIf(!hasTestDatabase)("投稿フロー（統合）", async () => {
     const row = await prisma.postPlatform.findUniqueOrThrow({ where: { id }, include: { logs: true } });
     expect(row.status).toBe("FAILED");
     expect(row.attempts).toBe(3);
-    expect(row.errorMessage).toContain("一時的に");
+    // 最終失敗では「自動で再試行します」と表示しない
+    expect(row.errorMessage).toContain("つながらず");
+    expect(row.errorMessage).not.toContain("自動で再試行");
     expect(row.logs.filter((l) => l.event === "RETRY")).toHaveLength(2);
     expect(row.logs.filter((l) => l.event === "POST_FAILED")).toHaveLength(1);
   });

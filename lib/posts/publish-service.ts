@@ -90,7 +90,7 @@ export async function publishPostPlatform(
   } catch (err) {
     const error = toSocialError(err, platform);
     const final = !error.retryable || attempt >= maxAttempts;
-    const userMessage = userMessageFor(error.kind, platform);
+    const userMessage = userMessageFor(error.kind, platform, { willRetry: !final });
     // 元エラーは詳細ログにのみ残す（ユーザーには分かりやすい文を見せる）
     const detail = { kind: error.kind, error: error.message, attempt, maxAttempts };
 

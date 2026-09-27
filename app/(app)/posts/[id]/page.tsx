@@ -44,7 +44,10 @@ export default async function PostDetailPage({
 
   return (
     <>
-      <AutoRefresh active={Boolean(inProgress || soon)} />
+      <AutoRefresh
+        active={Boolean(inProgress || soon)}
+        refreshAt={post.status === "SCHEDULED" ? post.scheduledAt?.toISOString() : null}
+      />
       <PageHeader
         title={post.title}
         description={post.topic ? `テーマ：${post.topic}` : undefined}

@@ -55,4 +55,12 @@ describe("ユーザー向けエラー文", () => {
     expect(message).toBe("Instagramとの接続が切れています。アカウント画面から再接続してください。");
     expect(message).not.toMatch(/OAuthException|190/);
   });
+
+  it("再試行する場合だけ「自動で再試行します」と伝え、最終失敗では次の操作を案内する", () => {
+    expect(userMessageFor("TRANSIENT", "X", { willRetry: true })).toContain("自動で再試行します");
+    const final = userMessageFor("TRANSIENT", "X");
+    expect(final).not.toContain("自動で再試行");
+    expect(final).toContain("今すぐ再投稿");
+    expect(userMessageFor("RATE_LIMIT", "THREADS")).not.toContain("自動で再試行");
+  });
 });
