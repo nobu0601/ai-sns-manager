@@ -86,6 +86,32 @@ test("APIキーで複数アカウントを連携し、投稿・予約まで一�
   await go(page, "/calendar");
   await expect(page.getByRole("link", { name: /E2E 予約投稿/ })).toBeVisible();
 
+  // AI で5案を生成（APIキー未設定のため AI は Mock）→ 1案削除 → 再生成 → 採用 → 予約
+  await go(page, "/posts/new");
+  await page.getByLabel("投稿テーマ").fill("週末の過ごし方");
+  await page.getByRole("button", { name: "5案を生成" }).click();
+  const cards = page.locator("#ai-panel-title").locator("xpath=ancestor::section").getByRole("listitem");
+  await expect(cards).toHaveCount(5, { timeout: 30_000 });
+  await expect(page.getByText("ブランド紹介型").first()).toBeVisible();
+  await cards.filter({ hasText: "質問型" }).getByRole("button", { name: "削除" }).click();
+  await expect(cards).toHaveCount(4);
+  await cards.filter({ hasText: "共感型" }).getByRole("button", { name: "この案を再生成" }).click();
+  await expect(cards.filter({ hasText: "共感型" })).toHaveCount(1);
+  await cards.filter({ hasText: "ストーリー型" }).getByRole("button", { name: "採用" }).click();
+  await expect(page.getByText("案を採用しました。")).toBeVisible();
+  // 採用するとアカウントごとの投稿内容に SNS 別の文章が入る（タイトルも補われる）
+  await page.getByRole("checkbox", { name: /^X 店舗A/ }).check();
+  await page.getByRole("checkbox", { name: /^Threads Lounge\+/ }).check();
+  await expect(page.getByLabel(/^X 店舗A.*の投稿内容/)).toHaveValue(/【ストーリー型】/);
+  await expect(page.getByLabel(/^Threads Lounge\+.*の投稿内容/)).toHaveValue(/みなさんはどう過ごしていますか/);
+  await expect(page.getByLabel(/投稿タイトル/)).toHaveValue(/週末の過ごし方/);
+  // Enter キーでは予約されない
+  await page.getByLabel("今回の目的（任意）").press("Enter");
+  await expect(page).toHaveURL(/\/posts\/new/);
+  await page.getByRole("button", { name: "予約する" }).click();
+  await expect(page.getByText("投稿を予約しました", { exact: true })).toBeVisible();
+  await expect(page.getByText("AIが作った投稿案を採用しました").first()).toBeVisible();
+
   // 失敗表示：内容エラーを Mock で再現
   await newPost(page, "E2E 失敗投稿", "失敗させる #mock-content-error", [/^X 店舗A/]);
   await page.getByRole("button", { name: "今すぐ投稿" }).click();

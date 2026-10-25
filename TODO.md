@@ -15,12 +15,14 @@
 - [ ] Threads / Instagram の長期トークンの自動更新（現在は期限切れ時に「キーを更新」で入れ直す）
 - [ ] 画像のアップロード（現在は Instagram の画像 URL 指定のみ）、X・Threads の画像付き投稿
 
-## Phase 2：AI 投稿生成
+## Phase 2：AI 投稿生成（完了）
 
-- [ ] `lib/ai/`（AIService / ClaudeProvider。キーは `ANTHROPIC_API_KEY`）と `prompts/`
-- [ ] 5 案生成（ブランド紹介型・共感型・ストーリー型・ノウハウ型・質問型）と採用・編集・再生成・削除
-- [ ] SNS 別最適化、Brand Voice、禁止ワード・品質チェック
-- [ ] `POST /api/posts/:id/generate` の実装（現在 501）
+- [x] `lib/ai/`（AIService / ClaudeProvider / MockAIProvider）と `prompts/`
+- [x] 5 案生成（ブランド紹介型・共感型・ストーリー型・ノウハウ型・質問型）と採用・編集・再生成・削除
+- [x] SNS 別最適化、Brand Voice、禁止ワード・品質チェックと自動の作り直し
+- [x] `POST /api/ai/drafts`、`POST /api/posts/:id/generate`
+- [ ] **本物の APIキーで生成を試し、文章の質を見てプロンプトを調整する**（開発環境ではキーがなく未確認）
+- [ ] 生成した案の保存（現在は画面を離れると消える。採用した案は投稿として保存される）
 
 ## Phase 3 / 4
 

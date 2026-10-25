@@ -159,6 +159,8 @@ model Post {
   status         PostStatus     @default(DRAFT)
   approvalStatus ApprovalStatus @default(PENDING)
   scheduledAt    DateTime?
+  // AI が作った案を採用した投稿か（承認モード「AI生成後のみ承認」の判定とログに使う）
+  aiGenerated    Boolean        @default(false)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 

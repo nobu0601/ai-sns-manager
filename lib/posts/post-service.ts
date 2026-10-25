@@ -8,6 +8,7 @@ import { getPublishScheduler } from "@/lib/queue/post-queue";
 import { listPostableAccounts } from "@/lib/social/account-service";
 import { getAdapter } from "@/lib/social/registry";
 import type { PostInput } from "@/lib/validation/schemas";
+import { findProhibitedWords } from "@/lib/ai/quality";
 import { writePostLog } from "./post-log";
 import { computePostStatus, initialApprovalStatus, isApproved, isEditable } from "./status";
 
@@ -102,7 +103,8 @@ export async function createPost(userId: string, input: PostInput): Promise<Post
         brandId: input.brandId ?? null,
         title: input.title,
         topic: input.topic,
-        approvalStatus: initialApprovalStatus(user.approvalMode, "manual"),
+        aiGenerated: Boolean(input.aiGenerated),
+        approvalStatus: initialApprovalStatus(user.approvalMode, input.aiGenerated ? "ai" : "manual"),
       },
     });
     for (const t of targets) {
@@ -120,6 +122,18 @@ export async function createPost(userId: string, input: PostInput): Promise<Post
     }
     const ids = (await tx.postPlatform.findMany({ where: { postId: post.id }, select: { id: true } })).map((p) => p.id);
     await writePostLog({ postPlatformIds: ids, event: "POST_CREATED", status: "INFO", message: "投稿を作成しました" }, tx);
+    if (input.aiGenerated) {
+      await writePostLog(
+        {
+          postPlatformIds: ids,
+          event: "AI_GENERATED",
+          status: "INFO",
+          message: "AIが作った投稿案を採用しました",
+          metadata: { model: input.aiGenerated.model, style: input.aiGenerated.style },
+        },
+        tx,
+      );
+    }
     await refreshPostStatus(post.id, tx);
     return post.id;
   });
@@ -165,7 +179,8 @@ export async function updatePost(userId: string, postId: string, input: PostInpu
         topic: input.topic,
         brandId: input.brandId ?? null,
         scheduledAt: null,
-        approvalStatus: initialApprovalStatus(user.approvalMode, "manual"),
+        aiGenerated: post.aiGenerated || Boolean(input.aiGenerated),
+        approvalStatus: initialApprovalStatus(user.approvalMode, post.aiGenerated || input.aiGenerated ? "ai" : "manual"),
       },
     });
     const wanted = new Set(targets.map((t) => t.socialAccountId));
@@ -255,6 +270,9 @@ export async function cancelSchedule(userId: string, postId: string) {
 async function validateForPublishing(userId: string, post: PostWithPlatforms): Promise<string[]> {
   const errors: string[] = [];
   const postable = new Set((await listPostableAccounts(userId)).map((a) => a.id));
+  const brand = post.brandId
+    ? await prisma.brand.findFirst({ where: { id: post.brandId, userId }, select: { prohibitedWords: true } })
+    : null;
   for (const p of post.platforms) {
     if (p.status === "PUBLISHED") continue;
     if (!p.socialAccountId) {
@@ -269,6 +287,8 @@ async function validateForPublishing(userId: string, post: PostWithPlatforms): P
       idempotencyKey: p.idempotencyKey,
     });
     errors.push(...result.errors.map((e) => e.replace(`${PLATFORM_LABELS[p.platform]}:`, `${targetLabel(p)}:`)));
+    const banned = findProhibitedWords(p.content, brand?.prohibitedWords ?? []);
+    if (banned.length > 0) errors.push(`${targetLabel(p)}: 禁止キーワード「${banned.join("」「")}」が含まれています`);
   }
   return errors;
 }

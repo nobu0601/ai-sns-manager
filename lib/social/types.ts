@@ -14,6 +14,8 @@ export interface SocialPlatformCapabilities {
   requiresMedia: boolean;
   // 1投稿の最大文字数。null は制限不明。値は各 Adapter 実装時に公式ドキュメントで再確認する
   maxTextLength: number | null;
+  // 文字数の数え方。X は日本語などを2文字として数える
+  lengthCounting: "codepoints" | "x-weighted";
 }
 
 // ユーザーが入力する各SNSのキー（平文。保存時は暗号化する）。

@@ -11,12 +11,16 @@ describe("SNS別の投稿チェック", () => {
     expect(check("X", "   ").errors).toHaveLength(1);
   });
 
-  it("最大文字数ちょうどはOK、超えるとエラー", () => {
+  it("最大文字数ちょうどはOK、超えるとエラー（半角で数えた場合）", () => {
     const max = PLATFORM_CAPABILITIES.X.maxTextLength!;
-    expect(check("X", "あ".repeat(max)).valid).toBe(true);
-    const over = check("X", "あ".repeat(max + 1));
+    expect(check("X", "a".repeat(max)).valid).toBe(true);
+    const over = check("X", "a".repeat(max + 1));
     expect(over.valid).toBe(false);
     expect(over.errors[0]).toContain(`${max}文字以内`);
+  });
+
+  it("Threads は日本語・絵文字も1文字として数える", () => {
+    expect(check("THREADS", "あ".repeat(PLATFORM_CAPABILITIES.THREADS.maxTextLength!)).valid).toBe(true);
   });
 
   it("絵文字は1文字として数える", () => {

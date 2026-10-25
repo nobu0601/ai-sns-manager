@@ -13,6 +13,11 @@ export const postInputSchema = z.object({
   title: z.string().trim().min(1, "投稿タイトルを入力してください").max(200),
   topic: z.string().trim().max(1000).default(""),
   brandId: z.string().nullable().optional(),
+  // AI が作った案を採用した場合に、使ったモデルと型を付ける
+  aiGenerated: z
+    .object({ model: z.string().max(100), style: z.string().max(50) })
+    .nullable()
+    .optional(),
   targets: z
     .array(targetSchema)
     .min(1, "投稿先のアカウントを1つ以上選択してください")
@@ -43,6 +48,13 @@ export const brandInputSchema = z.object({
   contentPillars: stringList,
 });
 export type BrandInput = z.infer<typeof brandInputSchema>;
+
+export const draftRequestSchema = z.object({
+  topic: z.string().trim().max(1000).default(""),
+  objective: z.string().trim().max(500).optional(),
+  brandId: z.string().nullable().optional(),
+  styles: z.array(z.enum(["brand_intro", "empathy", "story", "howto", "question"])).max(5).optional(),
+});
 
 const credentialValues = z.record(z.string(), z.string().max(2000));
 

@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { AIError, type AIErrorKind } from "@/lib/ai/errors";
 import { ServiceError } from "@/lib/errors/service-error";
+
+const AI_ERROR_STATUS: Record<AIErrorKind, number> = {
+  NOT_CONFIGURED: 503,
+  AUTH: 502,
+  RATE_LIMIT: 429,
+  REFUSAL: 422,
+  INVALID_OUTPUT: 502,
+  UNAVAILABLE: 503,
+};
 import { logger } from "@/lib/logging/logger";
 
 export type ApiErrorBody = { error: { code: string; message: string; details?: string[] } };
@@ -21,6 +31,13 @@ export function toErrorResponse(err: unknown): Response {
     return NextResponse.json<ApiErrorBody>(
       { error: { code: err.code, message: err.message, details: err.details } },
       { status: err.status },
+    );
+  }
+  if (err instanceof AIError) {
+    logger.warn("ai.error", { kind: err.kind, detail: err.detail });
+    return NextResponse.json<ApiErrorBody>(
+      { error: { code: `AI_${err.kind}`, message: err.message } },
+      { status: AI_ERROR_STATUS[err.kind] },
     );
   }
   if (err instanceof ZodError) {

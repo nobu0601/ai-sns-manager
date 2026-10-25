@@ -9,6 +9,10 @@ import { btn, input, label } from "@/components/common/buttons";
 import { ApiError, apiFetch } from "@/lib/client/api";
 import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
 import { PLATFORM_CAPABILITIES } from "@/lib/social/capabilities";
+import { draftTexts } from "@/lib/ai/quality";
+import type { PostDraft } from "@/lib/ai/types";
+import { platformTextLength } from "@/lib/social/text-length";
+import { AiDraftPanel } from "./AiDraftPanel";
 import { validateAgainstCapabilities } from "@/lib/social/validate";
 
 const PLATFORM_ORDER: Platform[] = ["X", "INSTAGRAM", "THREADS"];
@@ -70,6 +74,8 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
   );
   // 新規作成後に予約だけ失敗した場合、再送信で二重作成しないよう保存済みIDを覚えておく
   const [savedId, setSavedId] = useState(initial?.id);
+  // AI の案を採用した場合のモデルと型（保存時に送る）
+  const [aiMeta, setAiMeta] = useState<{ model: string; style: string } | null>(null);
   const [pending, setPending] = useState<Action | null>(null);
   const [error, setError] = useState<{ message: string; details: string[] } | null>(null);
 
@@ -82,7 +88,7 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
     () =>
       selectedAccounts.map((a) => ({
         account: a,
-        length: [...contentFor(a.id).trim()].length,
+        length: platformTextLength(contentFor(a.id), PLATFORM_CAPABILITIES[a.platform]),
         result: validateAgainstCapabilities(
           { platform: a.platform, content: contentFor(a.id), mediaUrls: mediaFor(a.platform), idempotencyKey: "" },
           PLATFORM_CAPABILITIES[a.platform],
@@ -94,6 +100,16 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
 
   function toggleAccount(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  // AI の案を採用：SNSごとに書き分けた文章を、各アカウントの投稿内容に入れる
+  function adoptDraft(draft: PostDraft, meta: { model: string; style: string }) {
+    const texts = draftTexts(draft);
+    setPerAccount(Object.fromEntries(choices.map((a) => [a.id, texts[a.platform]])));
+    setCommon(texts.X);
+    setSeparate(true);
+    if (!title.trim()) setTitle(draft.title);
+    setAiMeta(meta);
   }
 
   function toggleSeparate(next: boolean) {
@@ -117,6 +133,7 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
       title,
       topic,
       brandId: brandId || null,
+      aiGenerated: aiMeta,
       targets: selectedAccounts.map((a) => ({ socialAccountId: a.id, content: contentFor(a.id), mediaUrls: mediaFor(a.platform) })),
     };
     let postId = savedId;
@@ -154,7 +171,9 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
       className="space-y-6"
       onSubmit={(e) => {
         e.preventDefault();
-        submit("schedule");
+        // 入力欄で Enter を押しただけでは予約しない（「予約する」ボタンを押したときだけ）
+        const submitter = (e.nativeEvent as SubmitEvent).submitter;
+        if (submitter?.getAttribute("type") === "submit") submit("schedule");
       }}
     >
       {error && <Alert title={error.message} messages={error.details} />}
@@ -186,6 +205,8 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
           </div>
         )}
       </section>
+
+      <AiDraftPanel topic={topic} brandId={brandId} onAdopt={adoptDraft} />
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <fieldset>
@@ -276,6 +297,7 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
               <li key={c.account.id} className={over ? "text-rose-700" : "text-slate-500"}>
                 {PLATFORM_LABELS[c.account.platform]} {c.account.accountName}：{c.length}
                 {max !== null && ` / ${max}`}文字
+                {PLATFORM_CAPABILITIES[c.account.platform].lengthCounting === "x-weighted" && "（日本語は1文字を2文字として数えます）"}
                 {c.result.warnings.map((w) => (
                   <span key={w} className="ml-2 text-amber-700">※{w.replace(`${PLATFORM_LABELS[c.account.platform]}: `, "")}</span>
                 ))}

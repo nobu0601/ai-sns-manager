@@ -13,6 +13,7 @@ export const PLATFORM_CAPABILITIES: Record<Platform, SocialPlatformCapabilities>
     deletePost: true,
     requiresMedia: false,
     maxTextLength: 280,
+    lengthCounting: "x-weighted",
   },
   INSTAGRAM: {
     textPost: false,
@@ -23,6 +24,7 @@ export const PLATFORM_CAPABILITIES: Record<Platform, SocialPlatformCapabilities>
     deletePost: false,
     requiresMedia: true,
     maxTextLength: 2200,
+    lengthCounting: "codepoints",
   },
   THREADS: {
     textPost: true,
@@ -33,5 +35,6 @@ export const PLATFORM_CAPABILITIES: Record<Platform, SocialPlatformCapabilities>
     deletePost: true,
     requiresMedia: false,
     maxTextLength: 500,
+    lengthCounting: "codepoints",
   },
 };

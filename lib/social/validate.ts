@@ -1,4 +1,5 @@
 import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
+import { platformTextLength } from "./text-length";
 import type { PlatformPost, SocialPlatformCapabilities, ValidationResult } from "./types";
 
 // capabilities に基づく共通チェック。SNS固有のチェックは各 Adapter で追加する。
@@ -14,10 +15,11 @@ export function validateAgainstCapabilities(
 
   if (!content && !(capabilities.requiresMedia && hasMedia)) errors.push(`${name}: 投稿内容を入力してください`);
 
-  // 絵文字・サロゲートペアを1文字として数える（SNS側の厳密な数え方とは異なる場合がある）
-  const length = [...content].length;
+  // SNS の数え方で数える（X は日本語を2文字として数える）
+  const length = platformTextLength(content, capabilities);
   if (capabilities.maxTextLength !== null && length > capabilities.maxTextLength) {
-    errors.push(`${name}: ${capabilities.maxTextLength}文字以内にしてください（現在${length}文字）`);
+    const note = capabilities.lengthCounting === "x-weighted" ? "。日本語は1文字を2文字として数えます" : "";
+    errors.push(`${name}: ${capabilities.maxTextLength}文字以内にしてください（現在${length}文字${note}）`);
   }
 
   if (capabilities.requiresMedia && !hasMedia) {

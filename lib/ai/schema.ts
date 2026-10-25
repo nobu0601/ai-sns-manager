@@ -1,0 +1,19 @@
+import * as z from "zod/v4";
+import { DRAFT_STYLES } from "./types";
+
+// Claude の構造化出力（output_config.format）に渡すスキーマ。
+// 件数や文字数の制約はスキーマではなく、受け取った後の品質チェックで確認する
+export const draftSchema = z.object({
+  style: z.enum(DRAFT_STYLES),
+  title: z.string().describe("管理用の短いタイトル（20字程度）"),
+  summary: z.string().describe("この案の狙いを1文で"),
+  x: z.object({ text: z.string() }),
+  instagram: z.object({
+    caption: z.string().describe("ハッシュタグを含まない本文"),
+    hashtags: z.array(z.string()).describe("# 付きのハッシュタグ"),
+  }),
+  threads: z.object({ text: z.string() }),
+});
+
+export const draftSetSchema = z.object({ drafts: z.array(draftSchema) });
+export type DraftSet = z.infer<typeof draftSetSchema>;

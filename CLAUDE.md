@@ -80,7 +80,9 @@ workers/post-worker.ts                 BullMQ Worker。投稿の実行は必ず�
 
 ## 8. AI ルール（Phase 2 以降）
 
-- AI は Claude（Anthropic）を使う。キーは `.env` の `ANTHROPIC_API_KEY`（ユーザーごとの入力欄は作らない）
+- AI は Claude（Anthropic）を使う。キーは `.env` の `ANTHROPIC_API_KEY`（ユーザーごとの入力欄は作らない）。既定モデルは `claude-sonnet-5-5`（`ANTHROPIC_MODEL` で変更）
+- Claude の呼び出しは `lib/ai/claude-provider.ts` だけに置く。公式 SDK（`@anthropic-ai/sdk`）を使い、`fetch` で直接呼ばない。SDK の使い方を推測で書かない
+- テストや APIキー未設定時は `MockAIProvider`（`setAIProvider()` で差し替え可能）。テストで本物の Claude を呼ばない
 
 - プロンプトはコードに直書きせず `prompts/`（post-generation / x / instagram / threads / image / video）に置く
 - AI の出力は Structured Output / JSON Schema で受け、zod で検証してから保存する。検証失敗時はリトライ

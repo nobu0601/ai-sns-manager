@@ -2,6 +2,8 @@ import { Card, PageHeader } from "@/components/common/Card";
 import { ApprovalModeForm } from "@/components/settings/ApprovalModeForm";
 import { BrandForm } from "@/components/settings/BrandForm";
 import { BrandList } from "@/components/settings/BrandList";
+import { DEFAULT_MODEL } from "@/lib/ai/claude-provider";
+import { aiMode } from "@/lib/ai/registry";
 import { requirePageUserId } from "@/lib/auth/session";
 import { listBrands } from "@/lib/brands/brand-service";
 import { prisma } from "@/lib/database/prisma";
@@ -16,6 +18,8 @@ export default async function SettingsPage() {
   ]);
 
   const aiConfigured = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+  const mode = aiMode();
+  const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
 
   return (
     <>
@@ -26,16 +30,25 @@ export default async function SettingsPage() {
             <ApprovalModeForm current={user.approvalMode} />
           </Card>
           <Card title="AI（Claude）">
-            <p className="text-sm">
-              APIキー：
-              {aiConfigured ? (
-                <span className="font-semibold text-emerald-700">● 設定済み</span>
-              ) : (
-                <span className="font-semibold text-slate-500">○ 未設定</span>
-              )}
-            </p>
+            <dl className="space-y-1 text-sm">
+              <div>
+                <dt className="inline text-slate-500">APIキー：</dt>
+                <dd className="inline">
+                  {aiConfigured ? (
+                    <span className="font-semibold text-emerald-700">● 設定済み</span>
+                  ) : (
+                    <span className="font-semibold text-slate-500">○ 未設定</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="inline text-slate-500">動作：</dt>
+                <dd className="inline">{mode === "claude" ? `Claude（${model}）` : "Mock（AIを呼ばず例文を返す）"}</dd>
+              </div>
+            </dl>
             <p className="mt-2 text-xs text-slate-500">
-              AIによる投稿文の生成（Phase 2）に使います。サーバーの .env の ANTHROPIC_API_KEY に設定してください。キーは画面には表示しません。
+              投稿作成画面の「AIで投稿案を作る」で使います。キーはサーバーの .env の ANTHROPIC_API_KEY に設定してください（画面には表示しません）。
+              ブランドの説明・トーン・禁止キーワードなどが、AIへの指示に使われます。
             </p>
           </Card>
         </div>
