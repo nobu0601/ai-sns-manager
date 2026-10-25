@@ -2,10 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { AIError } from "./errors";
 import type * as z from "zod/v4";
-import { mediaUserPrompt, planUserPrompt, promptFile, systemPrompt, userPrompt } from "./prompts";
-import { draftSetSchema, mediaPromptSchema, planSchema } from "./schema";
+import { analysisUserPrompt, mediaUserPrompt, planUserPrompt, promptFile, systemPrompt, userPrompt } from "./prompts";
+import { analysisSchema, draftSetSchema, mediaPromptSchema, planSchema } from "./schema";
 import type {
   AIProvider,
+  AnalysisRequest,
+  AnalysisResult,
   GenerateRequest,
   GenerateResult,
   MediaPromptRequest,
@@ -76,6 +78,11 @@ export class ClaudeProvider implements AIProvider {
   async planWeek(request: PlanRequest): Promise<PlanResult> {
     const { output, model } = await this.call(planSchema, promptFile("agent/system.md"), planUserPrompt(request));
     return { items: output.items, model };
+  }
+
+  async analyze(request: AnalysisRequest): Promise<AnalysisResult> {
+    const { output, model } = await this.call(analysisSchema, promptFile("analytics/system.md"), analysisUserPrompt(request));
+    return { ...output, model };
   }
 }
 

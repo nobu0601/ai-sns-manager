@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/common/Alert";
 import { Badge } from "@/components/common/Badge";
 import { btn, input, label } from "@/components/common/buttons";
@@ -14,10 +14,12 @@ type Props = {
   topic: string;
   brandId: string;
   onAdopt: (draft: CheckedDraft, meta: { model: string; style: DraftStyle }) => void;
+  // 画面を開いたときに自動で5案を作る（ダッシュボードの「5案生成」から開いたとき）
+  autoGenerate?: boolean;
 };
 
 // AI に投稿案を作らせ、採用・再生成・削除を選ぶ
-export function AiDraftPanel({ topic, brandId, onAdopt }: Props) {
+export function AiDraftPanel({ topic, brandId, onAdopt, autoGenerate = false }: Props) {
   const [objective, setObjective] = useState("");
   const [drafts, setDrafts] = useState<CheckedDraft[]>([]);
   const [meta, setMeta] = useState<{ model: string; provider: string } | null>(null);
@@ -46,6 +48,16 @@ export function AiDraftPanel({ topic, brandId, onAdopt }: Props) {
       setPending(null);
     }
   }
+
+  // 開発時の二重実行（React の StrictMode）でも1回だけ作る
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!autoGenerate || autoStarted.current || !topic.trim()) return;
+    autoStarted.current = true;
+    void generateAll();
+    // 開いたときに1回だけ実行する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function regenerate(draft: CheckedDraft) {
     setPending(draft.id);

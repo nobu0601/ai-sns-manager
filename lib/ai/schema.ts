@@ -37,3 +37,20 @@ export const planSchema = z.object({
     }),
   ),
 });
+
+// 分析（Phase 4）。evidence には、根拠にした投稿の ref（P1 など）を入れる
+const evidence = z.array(z.string()).describe("根拠にした投稿の ref（例：P1）");
+export const analysisSchema = z.object({
+  summary: z.string().describe("全体の傾向を2〜3文で"),
+  goodThemes: z.array(z.object({ theme: z.string(), reason: z.string(), evidence })),
+  textTrends: z.array(z.object({ finding: z.string(), evidence })),
+  timeTrends: z.array(z.object({ finding: z.string(), evidence })),
+  nextIdeas: z.array(
+    z.object({
+      title: z.string().describe("投稿案の短いタイトル"),
+      topic: z.string().describe("投稿テーマ（投稿作成画面のテーマ欄に入る）"),
+      pillar: z.string(),
+      reason: z.string(),
+    }),
+  ),
+});

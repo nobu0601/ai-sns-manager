@@ -201,6 +201,8 @@ SNS アカウント。API キー類は暗号化。パスワード・秘密情報
 | isMock | Boolean | Mock API を使用中か |
 | lastCheckedAt | DateTime? | 最後に検証した日時 |
 | lastError | String? | 直近のエラーメッセージ（ユーザー向け） |
+| metricsError | String? | 分析の数値を取得できなかった理由（ユーザー向けの文）。取得できれば空 |
+| metricsCheckedAt | DateTime? | 分析の数値を最後に取得しようとした日時 |
 | createdAt | DateTime | 作成日時 |
 | updatedAt | DateTime | 更新日時 |
 
@@ -368,6 +370,63 @@ AI Agent の実行記録。`trigger` が `SCHEDULED` なら毎週の自動実行
 
 ---
 
+### PostMetric
+
+投稿ごとの成績（SNS から取得した最新の値）。`postPlatformId` は UNIQUE（投稿先 1 件に 1 行。取得のたびに上書き）。SNS が返さない指標は `null`（0 と区別する）。
+
+| Column | Type | 説明 |
+|--------|------|------|
+| postPlatformId | String (fk, UNIQUE) | 対象の PostPlatform（削除で一緒に削除） |
+| platform | Platform | X / INSTAGRAM / THREADS |
+| views | Int? | 表示回数（X: impression_count / Threads・Instagram: views） |
+| reach | Int? | リーチ（Instagram のみ） |
+| likes | Int? | いいね |
+| comments | Int? | コメント・返信 |
+| shares | Int? | シェア・リポスト・引用の合計 |
+| saves | Int? | 保存・ブックマーク（Threads は取得しない） |
+| clicks | Int? | リンクのクリック。どの SNS からも取得していないため常に `null` |
+| raw | Json? | SNS の API の数値（項目名は SNS のまま。確認用） |
+| fetchedAt / createdAt | DateTime | 取得日時 / 作成日時 |
+
+---
+
+### AccountMetric
+
+アカウントのフォロワー数。日本時間の 1 日に 1 行（同じ日は上書き）。
+
+| Column | Type | 説明 |
+|--------|------|------|
+| socialAccountId | String (fk) | 対象の SocialAccount（削除で一緒に削除） |
+| date | DateTime | 日本時間のその日の 0:00 |
+| followers | Int | フォロワー数 |
+| fetchedAt | DateTime | 取得日時 |
+
+**Constraints:** `(socialAccountId, date)` が UNIQUE
+
+---
+
+### AnalysisReport
+
+AI 分析の結果。根拠の投稿データ（`evidence`）も一緒に保存し、画面で並べて表示する。
+
+| Column | Type | 説明 |
+|--------|------|------|
+| userId / brandId | String (fk) | 所有者 / 対象ブランド |
+| trigger / status | AgentRunTrigger / AgentRunStatus | 起動元（`MANUAL` / `SCHEDULED`）/ 状態（`QUEUED` / `RUNNING` / `COMPLETED` / `FAILED`） |
+| periodStart / periodEnd | DateTime? | 分析の対象期間 |
+| postCount | Int | 分析に使った投稿の数（既定 0） |
+| result | Json? | AI の分析（反応の良かったテーマ・文章傾向・時間帯傾向・次回投稿案） |
+| evidence | Json? | AI に渡した実績データ（投稿ごとの数値と集計） |
+| model | String | 使った AI モデル |
+| errorMessage | String? | 失敗理由 |
+| createdAt / finishedAt | DateTime / DateTime? | 作成日時 / 完了・失敗日時 |
+
+**Relations:** `user`: User、`brand`: Brand。**Indexes:** `(userId, brandId, createdAt)`
+
+マイグレーション：`20261025030000_analytics`（既存テーブルへの追加のみ。`SocialAccount` に `metricsError` / `metricsCheckedAt` を追加し、上の 3 テーブルを作る）
+
+---
+
 ## 状態遷移ルール
 
 ### Post.status の遷移
@@ -497,6 +556,5 @@ npm run db:studio
 
 ## 今後の拡張
 
-### Phase 4 で追加予定
-
-- 分析用のモデル（SNS から取得できる範囲の投稿成績）
+- クリック数の取得（SNS の API が対応したら。`PostMetric.clicks` の列はすでにある）
+- 分析結果の期間比較（先週との比較など）

@@ -14,13 +14,14 @@ Phase 1（MVP）→ 2（AI 生成）→ 3（メディア生成・Agent）→ 4�
 ```
 app/ (pages, app/api Route Handlers)   HTTP・画面。ロジックを書きすぎない
   ↓
-lib/* サービス層                        posts/ social/ brands/ dashboard/ queue/ …
+lib/* サービス層                        posts/ social/ brands/ dashboard/ queue/ analytics/ …
   ↓
 Prisma (lib/database/prisma.ts)        DB アクセス
   ↓
 PostgreSQL
 
 workers/post-worker.ts                 BullMQ Worker。投稿の実行は必ずここ
+workers/analytics-worker.ts            分析の Worker（SNS の数値取得・AI 分析）
 ```
 
 - SNS は `lib/social/types.ts` の `SocialPlatformAdapter` を実装する。呼び出し側は `getAdapter(platform)` だけを使う
@@ -97,3 +98,13 @@ workers/post-worker.ts                 BullMQ Worker。投稿の実行は必ず�
 - 生成後に文字数・禁止ワード・ブランドルール・重複・URL・ハッシュタグ・SNS 仕様をチェックし、問題があれば再生成
 - AI が生成した投稿は `initialApprovalStatus(mode, "ai")` で承認状態を決める。初期モードは「常に承認」
 - AI 生成内容はユーザーが編集できること。AI 分析の結果は「参考情報」として根拠データと並べて表示する
+
+## 10. 分析のルール（Phase 4）
+
+- SNS の数値は Adapter の `fetchPostMetrics` / `fetchFollowerCount` だけで取得する。SNS への HTTP 呼び出しは `lib/social/http.ts` を通す
+- SNS の API が返さない指標は実装しない。取得できない値は `null` で保存し、0 にしない（画面では「-」と表示する）
+- 分析のための SNS 呼び出しは Worker（`lib/queue/jobs.ts` のキュー、`workers/analytics-worker.ts`）だけで行う。Web リクエストの中では呼ばない
+- AI 分析は根拠の投稿（`P1`、`P2`…）を示す。アプリは一覧にない参照を取り除き、根拠のない指摘は捨てる（`checkAnalysis`）
+- AI 分析の結果は「参考情報」として、根拠の数値と並べて表示する
+- AI に投稿の日時を決めさせない（§9 と同じ）
+- テストでは `setAIProvider()`・`setJobDispatcher()` で差し替える。本物の SNS・Claude を呼ばない

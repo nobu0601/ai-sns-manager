@@ -1,5 +1,6 @@
 import type { Platform } from "@prisma/client";
 import { SocialPublishError } from "../errors";
+import type { MetricsTarget, PostMetricValues, PostMetricsResult } from "../types";
 import { callApi, type FetchLike } from "../http";
 
 // Meta Graph API（Threads / Instagram）の共通処理。
@@ -54,4 +55,25 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 export function withVersion(host: string, version: string | undefined): string {
   return version ? `${host}/${version}` : host;
+}
+
+// 投稿ごとに insights を1件ずつ取得する。個別の投稿の失敗（削除済みなど）は記録して続け、
+// アカウント全体の問題（接続切れ・権限不足・レート制限）は呼び出し元に投げる
+export async function collectPerPost(
+  targets: MetricsTarget[],
+  fetchOne: (externalPostId: string) => Promise<PostMetricValues>,
+): Promise<PostMetricsResult> {
+  const result: PostMetricsResult = new Map();
+  for (const t of targets) {
+    try {
+      result.set(t.externalPostId, await fetchOne(t.externalPostId));
+    } catch (err) {
+      if (err instanceof SocialPublishError && err.kind === "CONTENT") {
+        result.set(t.externalPostId, { error: err.message });
+        continue;
+      }
+      throw err;
+    }
+  }
+  return result;
 }

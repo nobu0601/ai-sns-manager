@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { DRAFT_STYLE_LABELS, type BrandContext, type GenerateRequest, type MediaPromptRequest, type PlanRequest } from "./types";
+import {
+  DRAFT_STYLE_LABELS,
+  type AnalysisGroupInput,
+  type AnalysisRequest,
+  type BrandContext,
+  type GenerateRequest,
+  type MediaPromptRequest,
+  type PlanRequest,
+} from "./types";
 
 // プロンプトはコードに直書きせず prompts/ から読み込む（アプリはリポジトリのルートで起動する前提）
 const PROMPT_FILES = ["post-generation/system.md", "x/guidelines.md", "instagram/guidelines.md", "threads/guidelines.md"];
@@ -92,6 +100,50 @@ export function planUserPrompt(request: PlanRequest): string {
       ? `pillar は次のいずれかにしてください：${request.brand.contentPillars.join("、")}`
       : "pillar は、ブランドに合う投稿テーマの柱を短い言葉で付けてください。",
   ];
+  if (request.insights) {
+    const i = request.insights;
+    parts.push(
+      "",
+      `# 最近の分析（${i.analyzedAt}・参考情報。投稿日時は変更しない）`,
+      `- 要約：${i.summary}`,
+      ...(i.goodThemes.length ? [`- 反応が良かったテーマ：${i.goodThemes.join("、")}`] : []),
+      ...(i.timeTrends.length ? [`- 時間帯の傾向：${i.timeTrends.join(" / ")}`] : []),
+      ...(i.nextIdeas.length ? [`- 次回の投稿案：${i.nextIdeas.map((n) => `${n.topic}（${n.pillar}）`).join("、")}`] : []),
+      "反応が良かったテーマや次回の投稿案を優先して使ってください。ただし pillar の偏りのルールは守ってください。",
+    );
+  }
   if (request.feedback?.length) parts.push("", "# 前回の計画で見つかった問題（必ず直してください）", ...request.feedback.map((f) => `- ${f}`));
+  return parts.join("\n");
+}
+
+const num = (v: number | null) => (v === null ? "-" : String(v));
+const groupTable = (title: string, groups: AnalysisGroupInput[]) => [
+  `# ${title}（平均）`,
+  ...(groups.length
+    ? groups.map((g) => `- ${g.key}：${g.posts}件｜表示 ${num(g.avgViews)}｜反応 ${num(g.avgReactions)}｜反応率 ${num(g.avgEngagementRate)}%`)
+    : ["（データなし）"]),
+];
+
+// 分析の依頼。数値は SNS から取得した実績で、「-」は SNS から取得できない項目
+export function analysisUserPrompt(request: AnalysisRequest): string {
+  const parts = [
+    brandSection(request.brand),
+    "# 投稿ごとの実績（新しい順。「-」は取得できない項目）",
+    ...request.posts.map(
+      (p) =>
+        `- ${p.ref}｜${p.date}（${p.timeBand}）｜${p.platform}｜柱：${p.pillar ?? "なし"}｜${p.title}｜` +
+        `表示 ${num(p.views)}・いいね ${num(p.likes)}・コメント ${num(p.comments)}・シェア ${num(p.shares)}・保存 ${num(p.saves)}｜` +
+        `反応 ${num(p.reactions)}・反応率 ${num(p.engagementRate)}%\n  本文：${p.excerpt}`,
+    ),
+    "",
+    ...groupTable("投稿テーマの柱ごと", request.byPillar),
+    "",
+    ...groupTable("時間帯ごと", request.byTimeBand),
+    "",
+    ...groupTable("曜日ごと", request.byWeekday),
+    "",
+    "evidence には、上の一覧にある ref（P1 など）だけを使ってください。",
+  ];
+  if (request.feedback?.length) parts.push("", "# 前回の分析で見つかった問題（必ず直してください）", ...request.feedback.map((f) => `- ${f}`));
   return parts.join("\n");
 }

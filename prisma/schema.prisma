@@ -117,12 +117,13 @@ model User {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  brands         Brand[]
-  socialAccounts SocialAccount[]
-  posts          Post[]
-  media          Media[]
-  agentConfigs   AgentConfig[]
-  agentRuns      AgentRun[]
+  brands          Brand[]
+  socialAccounts  SocialAccount[]
+  posts           Post[]
+  media           Media[]
+  agentConfigs    AgentConfig[]
+  agentRuns       AgentRun[]
+  analysisReports AnalysisReport[]
 }
 
 model Brand {
@@ -143,11 +144,12 @@ model Brand {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  posts          Post[]
-  socialAccounts SocialAccount[]
-  agentConfig    AgentConfig?
-  agentRuns      AgentRun[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  posts           Post[]
+  socialAccounts  SocialAccount[]
+  agentConfig     AgentConfig?
+  agentRuns       AgentRun[]
+  analysisReports AnalysisReport[]
 
   @@index([userId])
 }
@@ -173,12 +175,16 @@ model SocialAccount {
   lastCheckedAt        DateTime?
   // 直近のキー確認・投稿で起きたエラー（ユーザー向けの文）
   lastError            String?
+  // 分析の数値取得の結果（取得できないときのユーザー向けの文。例：X のプランでは取得できない）
+  metricsError         String?
+  metricsCheckedAt     DateTime?
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
 
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  brand         Brand?         @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  postPlatforms PostPlatform[]
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand          Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  postPlatforms  PostPlatform[]
+  accountMetrics AccountMetric[]
 
   @@unique([userId, platform, externalAccountId])
   @@index([userId, platform])
@@ -239,6 +245,7 @@ model PostPlatform {
   post          Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
   socialAccount SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
   logs          PostLog[]
+  metric        PostMetric?
 
   @@unique([postId, socialAccountId])
   @@index([status])
@@ -328,4 +335,69 @@ model AgentRun {
   posts Post[]
 
   @@index([userId, createdAt])
+}
+
+// 投稿ごとの成績（SNS から取得した最新の値）。SNS が返さない指標は null（0 と区別する）
+model PostMetric {
+  id             String   @id @default(cuid())
+  postPlatformId String   @unique
+  platform       Platform
+  // 表示回数（X: impression_count / Threads・Instagram: views）
+  views          Int?
+  // リーチ（Instagram のみ）
+  reach          Int?
+  likes          Int?
+  // コメント・返信
+  comments       Int?
+  // シェア・リポスト・引用の合計
+  shares         Int?
+  // 保存・ブックマーク
+  saves          Int?
+  // リンクのクリック（取得できる SNS がない間は null）
+  clicks         Int?
+  // SNS API の数値（項目名は SNS のまま。詳細確認用）
+  raw            Json?
+  fetchedAt      DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  postPlatform PostPlatform @relation(fields: [postPlatformId], references: [id], onDelete: Cascade)
+}
+
+// アカウントのフォロワー数（日本時間の1日に1件）
+model AccountMetric {
+  id              String   @id @default(cuid())
+  socialAccountId String
+  // 日本時間のその日の 0:00
+  date            DateTime
+  followers       Int
+  fetchedAt       DateTime @default(now())
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, date])
+}
+
+// AI による分析の結果。根拠となる投稿の数値（evidence）も一緒に保存し、画面で並べて表示する
+model AnalysisReport {
+  id           String          @id @default(cuid())
+  userId       String
+  brandId      String
+  trigger      AgentRunTrigger
+  status       AgentRunStatus  @default(QUEUED)
+  periodStart  DateTime?
+  periodEnd    DateTime?
+  postCount    Int             @default(0)
+  // AI の分析（反応が良かったテーマ・文章傾向・投稿時間傾向・次回投稿案）
+  result       Json?
+  // AI に渡した実績データ（投稿ごとの数値と集計）
+  evidence     Json?
+  model        String          @default("")
+  errorMessage String?
+  createdAt    DateTime        @default(now())
+  finishedAt   DateTime?
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([userId, brandId, createdAt])
 }

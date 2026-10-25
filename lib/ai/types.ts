@@ -83,6 +83,8 @@ export interface PlanRequest {
   brand: BrandContext;
   slots: PlanSlot[];
   history: PlanHistoryItem[];
+  // 最新の分析（あれば）。テーマ選びの参考にする。投稿日時は変えない
+  insights?: PlanInsights | null;
   feedback?: string[];
 }
 
@@ -100,12 +102,81 @@ export interface PlanResult {
   model: string;
 }
 
+// 分析（Phase 4）：AI に渡す実績データ。ref（P1, P2…）で投稿を指し、AI の結論の根拠にする
+export interface AnalysisPostInput {
+  ref: string;
+  date: string; // 例：10/27(月) 12:00
+  timeBand: string;
+  platform: string;
+  pillar: string | null;
+  title: string;
+  excerpt: string;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+  reactions: number | null;
+  engagementRate: number | null;
+}
+
+export interface AnalysisGroupInput {
+  key: string;
+  posts: number;
+  avgViews: number | null;
+  avgReactions: number | null;
+  avgEngagementRate: number | null;
+}
+
+export interface AnalysisRequest {
+  brand: BrandContext;
+  posts: AnalysisPostInput[];
+  byPillar: AnalysisGroupInput[];
+  byTimeBand: AnalysisGroupInput[];
+  byWeekday: AnalysisGroupInput[];
+  feedback?: string[];
+}
+
+export interface AnalysisFinding {
+  finding: string;
+  evidence: string[]; // 根拠の投稿の ref
+}
+
+export interface AnalysisIdea {
+  title: string;
+  topic: string;
+  pillar: string;
+  reason: string;
+}
+
+export interface AnalysisOutput {
+  summary: string;
+  goodThemes: { theme: string; reason: string; evidence: string[] }[];
+  textTrends: AnalysisFinding[];
+  timeTrends: AnalysisFinding[];
+  nextIdeas: AnalysisIdea[];
+}
+
+export interface AnalysisResult extends AnalysisOutput {
+  model: string;
+}
+
+// AI Agent の計画に渡す、最新の分析の要点
+export interface PlanInsights {
+  analyzedAt: string;
+  summary: string;
+  goodThemes: string[];
+  timeTrends: string[];
+  nextIdeas: { topic: string; pillar: string }[];
+}
+
 // AI の呼び出し先。Claude のほか、テスト・キー未設定時の Mock を差し替えられる
 export interface AIProvider {
   readonly name: string;
   generate(request: GenerateRequest): Promise<GenerateResult>;
   mediaPrompt(request: MediaPromptRequest): Promise<MediaPromptResult>;
   planWeek(request: PlanRequest): Promise<PlanResult>;
+  analyze(request: AnalysisRequest): Promise<AnalysisResult>;
 }
 
 // 画面に返す投稿案（品質チェックの結果つき）

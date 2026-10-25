@@ -72,3 +72,8 @@ export const SCHEDULE_GRACE_MS = 60 * 1000;
 export function isValidScheduleTime(runAt: Date, now: Date = new Date()): boolean {
   return !Number.isNaN(runAt.getTime()) && runAt.getTime() >= now.getTime() - SCHEDULE_GRACE_MS;
 }
+
+// JST の時（0〜23）
+export function jstHour(date: Date): number {
+  return new Date(date.getTime() + JST_OFFSET_MS).getUTCHours();
+}

@@ -39,6 +39,8 @@ describe.skipIf(!hasTestDatabase)("AI Agent・画像生成（統合）", async (
     async removeWeeklyAgent(configId) {
       weekly.delete(configId);
     },
+    async enqueueMetricsRefresh() {},
+    async enqueueAnalysis() {},
   });
 
   // 2026-10-26(月) 08:00 JST

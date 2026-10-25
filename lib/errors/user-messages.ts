@@ -31,3 +31,27 @@ export function userMessageFor(kind: SocialErrorKind, platform: Platform, { will
       return `${name}への投稿に失敗しました。${retryHint}`;
   }
 }
+
+// 分析の権限が足りないときの案内（SNS ごとに必要な権限・プランが違う）
+const METRICS_PERMISSION_HINTS: Record<Platform, string> = {
+  X: "X の現在の API プランでは、投稿の数値を取得できません。X 開発者ポータルで利用プランを確認してください。",
+  INSTAGRAM:
+    "Instagram の分析の権限（instagram_business_manage_insights）がありません。権限を付けたアクセストークンで、アカウント画面からキーを更新してください。",
+  THREADS:
+    "Threads の分析の権限（threads_manage_insights）がありません。権限を付けたアクセストークンで、アカウント画面からキーを更新してください。",
+};
+
+// 分析の数値を取得できなかったときの文
+export function metricsMessageFor(kind: SocialErrorKind, platform: Platform): string {
+  const name = PLATFORM_LABELS[platform];
+  switch (kind) {
+    case "AUTH":
+      return `${name}との接続が切れているため、数値を取得できませんでした。アカウント画面から再接続してください。`;
+    case "PERMISSION":
+      return METRICS_PERMISSION_HINTS[platform];
+    case "RATE_LIMIT":
+      return `${name}の取得回数の上限に達しました。次の自動取得（6時間ごと）で取り直します。`;
+    default:
+      return `${name}の数値を取得できませんでした。時間をおいて「数値を更新」を押してください。`;
+  }
+}

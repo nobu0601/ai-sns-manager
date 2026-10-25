@@ -76,6 +76,11 @@ lib/
     capabilities.ts       ← SNS ごとの機能制約
     errors.ts             ← エラー分類・リトライ判定
     **/\*-adapter.ts      ← SNS API 実装
+  analytics/
+    metrics-service.ts    ← SNS から投稿・フォロワーの数値を取得して保存
+    analytics-service.ts  ← 分析画面用の集計（期間・ブランド別）
+    analysis-service.ts   ← AI 分析の実行・根拠の確認・結果の保存
+    aggregate.ts          ← 集計（合計・柱・時間帯・曜日・SNS 別の平均）
   queue/
     post-queue.ts         ← BullMQ スケジュール管理
     retry.ts              ← リトライポリシー
@@ -87,7 +92,7 @@ lib/
 
 ### 4. Queue & Worker
 
-BullMQ (Redis) で予約投稿・画像/動画生成・AI Agent を管理する。Worker（`workers/`）が各キューを処理する（詳細は「Worker の構成」）。
+BullMQ (Redis) で予約投稿・画像/動画生成・AI Agent・分析を管理する。Worker（`workers/`）が各キューを処理する（詳細は「Worker の構成」）。
 
 ### 5. Database (Prisma + PostgreSQL)
 
@@ -144,6 +149,7 @@ interface AIProvider {
   generate(request: GenerateRequest): Promise<GenerateResult>;
   mediaPrompt(request: MediaPromptRequest): Promise<MediaPromptResult>; // 画像・動画の生成プロンプト
   planWeek(request: PlanRequest): Promise<PlanResult>; // AI Agent の投稿テーマ計画
+  analyze(request: AnalysisRequest): Promise<AnalysisResult>; // 分析（AI 分析）
 }
 ```
 
@@ -153,7 +159,7 @@ interface AIProvider {
   - `fallbacks: "default"` と beta `server-side-fallback-2026-07-01` でサーバー側フォールバックを有効化
   - `max_tokens` は 16000。SDK の再試行は `maxRetries: 2`
   - 件数や文字数はスキーマでは縛らず、受け取った後に品質チェックで確認する
-- **MockAIProvider** (`mock`): AI を呼ばず決まった案を返す。テーマに `#mock-prohibited` を含めると禁止ワード入りの案を返す（品質チェックの確認用）
+- **MockAIProvider** (`mock`): AI を呼ばず決まった案を返す。テーマに `#mock-prohibited` を含めると禁止ワード入りの案を返す（品質チェックの確認用）。分析は数値から決まった形式の結果を返す
 
 ### Registry
 
@@ -229,15 +235,47 @@ lib/media/
 - **承認**：`approveAgentRun()`（`POST /api/agent/runs/{id}/approve`）が対象の投稿を計画日時で `schedulePost(approve: true)` する
 - **毎週の自動実行**：`AgentConfig.weeklyEnabled` が true のとき `upsertWeeklyAgent()` が `agent-run` キューに job scheduler（ID `agent-weekly-{configId}`、cron `m h * * 曜日`、`tz: Asia/Tokyo`）を登録する。発火すると `startWeeklyRun()` が `trigger = SCHEDULED` の AgentRun を作る。ai worker の起動時に `reconcileWeeklySchedules()` が DB の設定に合わせて登録し直す
 
+## 分析（Phase 4）
+
+`lib/analytics/` が、SNS から取得した投稿の数値を集計し、AI に分析させる。**SNS の API を呼ぶのは Worker だけ**（`lib/queue/jobs.ts` の `analytics` キュー）。
+
+### 数値の取得
+
+1. `collectMetrics()`（`refresh-all` / `refresh` ジョブ）が、直近 30 日に公開された投稿の数値を `PostMetric` に保存する
+   - 各 Adapter の `fetchPostMetrics()`（投稿の数値）と `fetchFollowerCount()`（フォロワー数）を呼ぶ
+   - フォロワー数は日本時間の 1 日に 1 件（`AccountMetric`）。同じ日は上書きする
+   - 1 件の投稿が失敗（削除されたなど）しても、ほかの投稿は続ける
+   - アカウントごとの失敗は `SocialAccount.metricsError`（画面に出す文）と `metricsCheckedAt` に残す
+2. 実行の契機は 2 つ：6 時間ごと（job scheduler `metrics-refresh-all`）と、「数値を更新」（`POST /api/analytics/refresh`）
+3. SNS が返さない指標は `null` のまま保存する（0 にしない）
+
+### AI 分析
+
+1. `startAnalysis()`（`POST /api/analytics/analyze`）が `AnalysisReport`（QUEUED）を作り、`analytics` キューに登録する。同じブランドが分析中なら 409
+2. Worker が先に数値を取り直し、直近 90 日の公開済み投稿のうち数値があるものを新しい順に最大 30 件取る。3 件未満なら FAILED
+3. 投稿を `P1`、`P2`… の参照名で `AIProvider.analyze()` に渡す。集計値も併せて渡す
+4. `checkAnalysis()`：一覧にない参照を取り除き、根拠のない指摘は捨てる。次回投稿案の柱はブランドの投稿テーマの柱に限る。要件を満たさない場合は 1 回だけ作り直す
+5. 結果（`result`）と AI に渡した根拠データ（`evidence`）を `AnalysisReport` に保存する
+
+- プロンプト：`prompts/analytics/system.md`
+- 結果は「参考情報」として、根拠の数値と並べて表示する
+
+### AI Agent への反映
+
+- 毎週の自動実行（`trigger = SCHEDULED`）は、計画の直前に分析を行う。分析が失敗しても計画は続ける
+- 手動・毎週の実行とも、14 日以内に完了した最新の分析（`latestCompletedReport()`）を `insightsForPlan()` で読み、テーマ・次回案・時間帯の傾向を計画の参考にする
+- 投稿の日時は引き続き `computeSlots()` がユーザー設定から決める
+
 ## Worker の構成
 
-`workers/index.ts`（`npm run worker`）は下の3つを1プロセスで起動する。各ファイルは `npm run worker:post` などで単独でも起動できる。`run.ts` が起動と終了（SIGINT / SIGTERM）を共通化する。
+`workers/index.ts`（`npm run worker`）は下の4つを1プロセスで起動する。各ファイルは `npm run worker:post` などで単独でも起動できる。`run.ts` が起動と終了（SIGINT / SIGTERM）を共通化する。
 
 | Worker | ファイル | キュー | 同時実行 | 役割 |
 |--------|----------|--------|----------|------|
 | post | `post-worker.ts` | `post-publish` | 5 | 予約投稿の実行（起動時に予約中の投稿を再登録） |
 | media | `media-worker.ts` | `media-generate` | 2 | 画像・動画の生成 |
 | ai | `ai-worker.ts` | `agent-run` | 1 | AI Agent の実行（手動と毎週） |
+| analytics | `analytics-worker.ts` | `analytics` | 1 | 数値の取得（6 時間ごと・手動）と AI 分析。起動時に 6 時間ごとの登録を行う |
 
 ## Adapter パターン
 
@@ -258,6 +296,8 @@ interface SocialPlatformAdapter {
   validatePost(post: PlatformPost): Promise<ValidationResult>;
 }
 ```
+
+分析用に `fetchPostMetrics()`（投稿の数値）と `fetchFollowerCount()`（フォロワー数）も持つ（`lib/social/types.ts`）。
 
 ### Mode: Mock vs Live
 
@@ -398,12 +438,13 @@ ai-sns-manager/
         threads-adapter.ts    (Step 13)
     queue/
       post-queue.ts
-      jobs.ts           ← 画像・動画 / AI Agent のキュー
+      jobs.ts           ← 画像・動画 / AI Agent / 分析のキュー
       retry.ts
       connection.ts
     ai/                 ← 投稿案・計画・生成プロンプト（claude-provider / mock-provider）
     media/              ← 画像・動画生成（fal-provider / mock-provider / media-service）
     agent/              ← AI Agent（agent-service / slots / plan-check）
+    analytics/          ← 分析（metrics-service / analytics-service / analysis-service / aggregate）
     encryption/
       crypto.ts
     logging/
@@ -419,8 +460,8 @@ ai-sns-manager/
       service-error.ts
       user-messages.ts
   workers/
-    index.ts            ← 3つの Worker を1プロセスで起動
-    post-worker.ts / media-worker.ts / ai-worker.ts
+    index.ts            ← 4つの Worker を1プロセスで起動
+    post-worker.ts / media-worker.ts / ai-worker.ts / analytics-worker.ts
     run.ts
   prisma/
     schema.prisma

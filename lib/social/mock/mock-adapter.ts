@@ -4,8 +4,10 @@ import { PLATFORM_CAPABILITIES } from "../capabilities";
 import { SocialPublishError } from "../errors";
 import { validateAgainstCapabilities } from "../validate";
 import type {
+  MetricsTarget,
   PlatformCredentials,
   PlatformPost,
+  PostMetricsResult,
   PublishedPost,
   SocialPlatformAdapter,
   ValidationResult,
@@ -22,6 +24,13 @@ export const MOCK_TRIGGERS = {
 
 // キーにこの文字列を含めると「無効なキー」として扱う
 export const MOCK_INVALID_KEY = "invalid";
+// キーにこの文字列を含めると、分析の数値を取得する権限がないアカウントとして扱う（X のプラン不足などの再現）
+export const MOCK_NO_METRICS_KEY = "nometrics";
+
+// 投稿IDから決まる 0〜1 の値（同じ投稿なら毎回同じ数値になる）
+function seeded(id: string, salt: string): number {
+  return parseInt(createHash("sha256").update(`${salt}:${id}`).digest("hex").slice(0, 8), 16) / 0xffffffff;
+}
 
 export class MockSocialAdapter implements SocialPlatformAdapter {
   readonly capabilities;
@@ -65,6 +74,36 @@ export class MockSocialAdapter implements SocialPlatformAdapter {
       publishedAt: new Date(),
       raw: { mock: true, idempotencyKey: post.idempotencyKey },
     };
+  }
+
+  private assertMetricsAllowed(credentials: PlatformCredentials) {
+    if (Object.values(credentials).some((v) => String(v).includes(MOCK_NO_METRICS_KEY))) {
+      throw new SocialPublishError("PERMISSION", this.platform, "Mock: metrics not available for this plan (403)");
+    }
+  }
+
+  // 投稿IDから決まる架空の数値。SNS ごとに、実際の API が返す指標だけを埋める（返さない指標は null）
+  async fetchPostMetrics(targets: MetricsTarget[], credentials: PlatformCredentials): Promise<PostMetricsResult> {
+    this.assertMetricsAllowed(credentials);
+    const result: PostMetricsResult = new Map();
+    for (const { externalPostId: id } of targets) {
+      const views = 200 + Math.round(seeded(id, "views") * 3000);
+      const likes = Math.round(views * (0.01 + seeded(id, "likes") * 0.06));
+      const comments = Math.round(likes * seeded(id, "comments") * 0.3);
+      const shares = Math.round(likes * seeded(id, "shares") * 0.2);
+      const saves = this.platform === "THREADS" ? null : Math.round(likes * seeded(id, "saves") * 0.4);
+      const reach = this.platform === "INSTAGRAM" ? Math.round(views * 0.7) : null;
+      const raw: Record<string, number> = { views, likes, comments, shares, ...(saves !== null ? { saves } : {}), ...(reach !== null ? { reach } : {}) };
+      result.set(id, { views, reach, likes, comments, shares, saves, clicks: null, raw });
+    }
+    return result;
+  }
+
+  async fetchFollowerCount(credentials: PlatformCredentials, account: VerifiedAccount): Promise<number> {
+    this.assertMetricsAllowed(credentials);
+    // 日ごとに少しずつ増える架空のフォロワー数
+    const days = Math.floor(Date.now() / 86_400_000);
+    return 500 + Math.round(seeded(account.externalAccountId, "followers") * 2000) + (days % 365) * 2;
   }
 
   async validatePost(post: PlatformPost): Promise<ValidationResult> {

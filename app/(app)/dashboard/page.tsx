@@ -9,6 +9,8 @@ import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
 import { POST_STATUS_LABELS, STATUS_TONES } from "@/lib/labels";
 import { listPosts } from "@/lib/posts/post-service";
 import { listAgentRuns } from "@/lib/agent/agent-service";
+import { latestCompletedReport } from "@/lib/analytics/analysis-service";
+import type { AnalysisOutput } from "@/lib/ai/types";
 import { PLATFORMS } from "@/lib/social/registry";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +27,13 @@ function Stat({ label, value, href }: { label: string; value: string; href?: str
 
 export default async function DashboardPage() {
   const userId = await requirePageUserId();
-  const [stats, recent, runs] = await Promise.all([getDashboardStats(userId), listPosts(userId), listAgentRuns(userId, undefined, 1)]);
+  const [stats, recent, runs, report] = await Promise.all([
+    getDashboardStats(userId),
+    listPosts(userId),
+    listAgentRuns(userId, undefined, 1),
+    latestCompletedReport(userId),
+  ]);
+  const ideas = ((report?.result as AnalysisOutput | null | undefined)?.nextIdeas ?? []).slice(0, 3);
   const latestRun = runs[0];
   const waitingApproval = latestRun?.posts.filter((p) => p.approvalStatus === "PENDING" && (p.status === "READY" || p.status === "DRAFT")) ?? [];
 
@@ -38,11 +46,47 @@ export default async function DashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="今日の投稿" value={`${stats.todayCount}件`} href="/calendar" />
-        <Stat label="予約投稿" value={`${stats.scheduledCount}件`} href="/posts?status=SCHEDULED" />
-        <Stat label="今月の投稿" value={`${stats.monthPublished}件`} href="/posts?status=PUBLISHED" />
-        <Stat label="投稿成功率（今月）" value={stats.successRate === null ? "-" : `${stats.successRate}%`} />
+        <Stat label="今週の投稿" value={`${stats.weekPosts}件`} href="/calendar" />
+        <Stat label="成功（今週）" value={`${stats.weekPublished}件`} href="/posts?status=PUBLISHED" />
+        <Stat label="予約" value={`${stats.scheduledCount}件`} href="/posts?status=SCHEDULED" />
+        <Stat label="下書き" value={`${stats.draftCount}件`} href="/posts" />
       </div>
+
+      <Card
+        title="AIおすすめ投稿"
+        className="mt-6"
+        action={<Link href={report ? `/analytics?brandId=${report.brandId}` : "/analytics"} className="text-sm font-semibold text-brand-600">分析を見る</Link>}
+      >
+        {!report || ideas.length === 0 ? (
+          <p className="text-sm text-slate-600">
+            投稿の数値をAIが分析すると、反応が良かったテーマから次の投稿案をおすすめします。
+            <Link href="/analytics" className="ml-1 font-semibold text-brand-600">分析画面へ</Link>
+          </p>
+        ) : (
+          <>
+            <p className="mb-2 text-xs text-slate-500">
+              {report.brand.name}・{formatDateTime(report.finishedAt)} の分析より（参考情報）
+            </p>
+            <ol className="space-y-2">
+              {ideas.map((idea, i) => (
+                <li key={i} className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0 text-sm text-slate-800">
+                    <span className="mr-1 font-semibold text-brand-600">{"①②③"[i]}</span>
+                    {idea.title}
+                    <span className="ml-2 text-xs text-slate-500">{idea.pillar}</span>
+                  </span>
+                  <Link
+                    href={`/posts/new?brandId=${report.brandId}&topic=${encodeURIComponent(idea.topic)}&generate=1#ai-panel-title`}
+                    className={btn.small}
+                  >
+                    5案生成
+                  </Link>
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
+      </Card>
 
       <Card
         title="AIエージェント"
@@ -122,9 +166,6 @@ export default async function DashboardPage() {
                 </li>
               ))}
             </ul>
-          )}
-          {stats.draftCount > 0 && (
-            <p className="mt-3 text-xs text-slate-500">下書き・未予約の投稿が {stats.draftCount} 件あります</p>
           )}
         </Card>
       </div>

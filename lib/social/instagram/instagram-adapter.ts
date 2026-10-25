@@ -1,12 +1,15 @@
 import { PLATFORM_CAPABILITIES } from "../capabilities";
 import { SocialPublishError } from "../errors";
 import type { FetchLike } from "../http";
-import { GraphClient, withVersion } from "../meta/graph";
+import { GraphClient, collectPerPost, withVersion } from "../meta/graph";
 import { primaryMedia } from "../media";
+import { readInsights, toMetricValues } from "../metrics/values";
 import { validateAgainstCapabilities } from "../validate";
 import type {
+  MetricsTarget,
   PlatformCredentials,
   PlatformPost,
+  PostMetricsResult,
   PublishedPost,
   SocialPlatformAdapter,
   TokenCredentials,
@@ -22,6 +25,11 @@ import type {
 //             GET {container-id}?fields=status_code が FINISHED になるまで待つ
 //             POST {ig-user-id}/media_publish（creation_id）
 //   必要な権限：instagram_business_basic, instagram_business_content_publish
+// 分析（公式ドキュメント Instagram Media Insights / IG User）：
+//   投稿 GET {media-id}/insights?metric=views,reach,likes,comments,shares,saved → data[].values[0].value
+//        （権限 instagram_business_manage_insights。impressions は2024年7月以降の投稿で廃止のため使わない）
+//   フォロワー数 GET me?fields=followers_count（権限 instagram_business_basic）
+const POST_METRICS = "views,reach,likes,comments,shares,saved";
 type WaitOptions = Parameters<GraphClient["waitForContainer"]>[2];
 const VIDEO_WAIT = { attempts: 60, intervalMs: 5000 };
 
@@ -76,6 +84,27 @@ export class InstagramAdapter implements SocialPlatformAdapter {
       publishedAt: new Date(),
       raw: { containerId: container.id, id: published.id },
     };
+  }
+
+  async fetchPostMetrics(targets: MetricsTarget[], credentials: PlatformCredentials): Promise<PostMetricsResult> {
+    const graph = this.client(credentials);
+    return collectPerPost(targets, async (id) => {
+      const raw = readInsights(await graph.get(`${id}/insights`, { metric: POST_METRICS }));
+      return toMetricValues(raw, {
+        views: ["views"],
+        reach: ["reach"],
+        likes: ["likes"],
+        comments: ["comments"],
+        shares: ["shares"],
+        saves: ["saved"],
+      });
+    });
+  }
+
+  async fetchFollowerCount(credentials: PlatformCredentials): Promise<number> {
+    const me = await this.client(credentials).get<{ followers_count?: number }>("me", { fields: "followers_count" });
+    if (typeof me.followers_count !== "number") throw new SocialPublishError("UNKNOWN", "INSTAGRAM", "no followers_count");
+    return me.followers_count;
   }
 
   async validatePost(post: PlatformPost): Promise<ValidationResult> {

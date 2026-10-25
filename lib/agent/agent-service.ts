@@ -13,6 +13,7 @@ import { createPost, schedulePost } from "@/lib/posts/post-service";
 import { getJobDispatcher } from "@/lib/queue/jobs";
 import { listPostableAccounts } from "@/lib/social/account-service";
 import { PLATFORM_CAPABILITIES } from "@/lib/social/capabilities";
+import { insightsForPlan, runAnalysisNow } from "@/lib/analytics/analysis-service";
 import { checkPlan } from "./plan-check";
 import { computeSlots, slotLabel } from "./slots";
 
@@ -99,7 +100,7 @@ export async function startWeeklyRun(configId: string): Promise<string | null> {
 
 const PLAN_ATTEMPTS = 2;
 
-// Agent の本体：履歴の分析 → 投稿枠の決定 → テーマの計画 → 投稿文の生成 → 画像の生成 → 投稿の作成 → 承認待ち（または予約）
+// Agent の本体：履歴の確認 → 投稿枠の決定 → 分析の反映 → テーマの計画 → 投稿文の生成 → 画像の生成 → 投稿の作成 → 承認待ち（または予約）
 export async function executeAgentRun(runId: string, now: Date = new Date()): Promise<void> {
   const run = await prisma.agentRun.findUnique({ where: { id: runId } });
   if (!run || run.status === "COMPLETED" || run.status === "FAILED") return;
@@ -150,7 +151,17 @@ export async function executeAgentRun(runId: string, now: Date = new Date()): Pr
     });
     if (slots.length === 0) return fail("今後7日間に空いている投稿枠がありません（すでに投稿予定がある日は避けています）");
 
-    // 3. テーマの計画（ルール違反があれば指摘して作り直させる）
+    // 3. 分析の反映：毎週の自動実行では、計画の直前に分析する。最新の分析（14日以内）をテーマ選びの参考にする
+    if (run.trigger === "SCHEDULED") {
+      try {
+        await runAnalysisNow(run.userId, brand.id, "SCHEDULED", now);
+      } catch (err) {
+        logger.warn("agent.analysis_failed", { runId, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    const insights = await insightsForPlan(run.userId, brand.id, now);
+
+    // 4. テーマの計画（ルール違反があれば指摘して作り直させる）
     const ai = getAIProvider();
     let items: PlanItem[] = [];
     let feedback: string[] = [];
@@ -159,6 +170,7 @@ export async function executeAgentRun(runId: string, now: Date = new Date()): Pr
         brand,
         slots: slots.map((d, i) => ({ index: i, label: slotLabel(d) })),
         history,
+        insights,
         feedback,
       });
       feedback = checkPlan(plan.items, slots.length, brand.contentPillars);
@@ -176,7 +188,7 @@ export async function executeAgentRun(runId: string, now: Date = new Date()): Pr
       },
     });
 
-    // 4〜6. 投稿文の生成 → 投稿の作成 → 画像の生成
+    // 5〜7. 投稿文の生成 → 投稿の作成 → 画像の生成
     const needsImage = config.generateImages || targets.some((t) => PLATFORM_CAPABILITIES[t.platform].requiresMedia);
     const created: string[] = [];
     const problems: string[] = [];
@@ -218,6 +230,7 @@ export async function executeAgentRun(runId: string, now: Date = new Date()): Pr
     const mode = user.approvalMode === "AUTO" ? "完全自動モードのため、承認なしで予約します" : "内容を確認して承認すると予約されます";
     const summary = [
       `${slotLabel(slots[0])}〜${slotLabel(slots[slots.length - 1])}の投稿を${created.length}件作りました。${mode}。`,
+      ...(insights ? [`${insights.analyzedAt}の分析（反応が良かったテーマ・次回の投稿案）を参考にしました。`] : []),
       ...(needsImage ? ["画像もAIで作成し、できあがった投稿から自動で添付します。"] : []),
       ...(problems.length > 0 ? [`確認が必要な点：${problems.join(" / ")}`] : []),
     ].join("\n");

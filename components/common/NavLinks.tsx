@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/posts", label: "投稿一覧・履歴" },
   { href: "/calendar", label: "カレンダー" },
   { href: "/agent", label: "AIエージェント" },
+  { href: "/analytics", label: "分析" },
   { href: "/accounts", label: "SNSアカウント" },
   { href: "/settings", label: "設定" },
 ];

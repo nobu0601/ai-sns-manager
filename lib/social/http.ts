@@ -37,8 +37,11 @@ export function classifyHttpError(status: number, body: unknown): SocialErrorKin
   // Meta（Threads / Instagram）は無効・期限切れトークンを error.code 190 で返す
   const metaCode = (body as { error?: { code?: number } } | null)?.error?.code;
   if (metaCode === 190) return "AUTH";
+  // Meta の権限エラー（10: 権限がない / 200〜299: 権限が足りない）。HTTP 400 で返るため先に判定する
+  if (metaCode === 10 || (metaCode !== undefined && metaCode >= 200 && metaCode <= 299)) return "PERMISSION";
   if (status === 401) return "AUTH";
-  if (status === 403) return "PERMISSION";
+  // 402: X の利用枠（クレジット）が足りない
+  if (status === 402 || status === 403) return "PERMISSION";
   if (status === 429) return "RATE_LIMIT";
   if (status >= 500) return "TRANSIENT";
   if (status >= 400) return "CONTENT";

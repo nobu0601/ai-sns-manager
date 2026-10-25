@@ -2,6 +2,8 @@ import {
   DRAFT_STYLES,
   DRAFT_STYLE_LABELS,
   type AIProvider,
+  type AnalysisRequest,
+  type AnalysisResult,
   type GenerateRequest,
   type GenerateResult,
   type MediaPromptRequest,
@@ -58,16 +60,48 @@ export class MockAIProvider implements AIProvider {
   async planWeek(request: PlanRequest): Promise<PlanResult> {
     this.planCalls.push(request);
     const pillars = request.brand.contentPillars.length > 0 ? request.brand.contentPillars : ["ブランド紹介"];
+    // 分析の次回投稿案があれば、先頭の枠から使う（分析が計画に反映されることの確認用）
+    const ideas = request.insights?.nextIdeas ?? [];
     return {
       model: "mock",
       items: request.slots.map((slot, i) => ({
         slotIndex: slot.index,
         pillar: pillars[i % pillars.length],
-        topic: `${pillars[i % pillars.length]}：${slot.label}のおすすめ`,
+        topic: ideas[i] ? `${ideas[i].topic}` : `${pillars[i % pillars.length]}：${slot.label}のおすすめ`,
         style: DRAFT_STYLES[i % DRAFT_STYLES.length],
-        reason: `${slot.label}の枠に、最近使っていない柱を割り当てました`,
+        reason: ideas[i] ? `分析の次回投稿案「${ideas[i].topic}」を使いました` : `${slot.label}の枠に、最近使っていない柱を割り当てました`,
         imageIdea: `${request.brand.name}の店内で過ごす${pillars[i % pillars.length]}の様子`,
       })),
+    };
+  }
+
+  // 渡された数値だけから、決まった形の分析を返す（反応の多い柱・時間帯を選ぶ）
+  analyzeCalls: AnalysisRequest[] = [];
+  async analyze(request: AnalysisRequest): Promise<AnalysisResult> {
+    this.analyzeCalls.push(request);
+    const best = (groups: AnalysisRequest["byPillar"]) =>
+      [...groups].filter((g) => g.avgReactions !== null).sort((a, b) => b.avgReactions! - a.avgReactions!)[0];
+    const pillar = best(request.byPillar);
+    const band = best(request.byTimeBand);
+    const refsOf = (pred: (p: AnalysisRequest["posts"][number]) => boolean) => request.posts.filter(pred).map((p) => p.ref).slice(0, 3);
+    const top = [...request.posts].filter((p) => p.reactions !== null).sort((a, b) => b.reactions! - a.reactions!)[0];
+    const pillars = request.brand.contentPillars.length > 0 ? request.brand.contentPillars : [pillar?.key ?? "ブランド紹介"];
+    const mainPillar = pillar && pillars.includes(pillar.key) ? pillar.key : pillars[0];
+    return {
+      model: "mock",
+      summary: `${request.posts.length}件の投稿を分析しました。${pillar ? `「${pillar.key}」の投稿の反応が多い傾向です。` : ""}`,
+      goodThemes: pillar ? [{ theme: pillar.key, reason: `平均の反応が${pillar.avgReactions}で最も多い`, evidence: refsOf((p) => (p.pillar ?? "（柱なし）") === pillar.key) }] : [],
+      textTrends: top ? [{ finding: `反応が最も多い投稿は「${top.title}」です`, evidence: [top.ref] }] : [],
+      timeTrends: band ? [{ finding: `${band.key}の投稿の反応が多い傾向です`, evidence: refsOf((p) => p.timeBand === band.key) }] : [],
+      nextIdeas: [0, 1, 2].map((i) => {
+        const ideaPillar = i === 0 ? mainPillar : pillars[i % pillars.length];
+        return {
+          title: `${ideaPillar}の投稿案${i + 1}`,
+          topic: `${ideaPillar}：反応が良かった投稿の続き（案${i + 1}）`,
+          pillar: ideaPillar,
+          reason: i === 0 ? "反応が良かったテーマを続けるため" : "投稿テーマの柱が偏らないようにするため",
+        };
+      }),
     };
   }
 }

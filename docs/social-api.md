@@ -58,6 +58,10 @@ MOCK_TRANSIENT_FAILURE_RATE=0.3  # 30% の確率で一時失敗
 
 リトライ動作の検証に使用。
 
+### Mock の分析用の数値
+
+`fetchPostMetrics()` / `fetchFollowerCount()` は、投稿ごとに決まった擬似の数値を返す。返す項目は実際の API と同じ（Threads の保存は `null`、リーチは Instagram のみ）。キーに `nometrics` を含めると、分析で「権限がない」場合の動作を再現できる。
+
 ---
 
 ## Live Mode（本番・Step 11 以降）
@@ -98,6 +102,22 @@ MOCK_TRANSIENT_FAILURE_RATE=0.3  # 30% の確率で一時失敗
 - `GET {container-id}?fields=status_code` - コンテナ状態確認
 - `POST {ig-user-id}/media_publish` - 投稿確定
 - `GET {id}?fields=permalink` - 投稿 URL 取得
+
+### 分析（数値の取得）
+
+Adapter の `fetchPostMetrics()`（投稿の数値）と `fetchFollowerCount()`（フォロワー数）で取得する。どちらも `callApi`（`lib/social/http.ts`）を通す。SNS が返さない指標は `null`（0 にしない）。呼び出しは Worker だけが行う（`docs/architecture.md` の「分析」）。
+
+| SNS | 投稿の数値 | フォロワー数 | 必要な権限 |
+|-----|-----------|-------------|-----------|
+| X（`x/x-adapter.ts`） | `GET /2/tweets?ids=…&post.fields=public_metrics`（1 回で最大 100 件）。表示 = `impression_count`、いいね = `like_count`、コメント = `reply_count`、シェア = `repost_count` + `quote_count`、保存 = `bookmark_count` | `GET /2/users/me?user.fields=public_metrics` の `followers_count` | API プランによっては使えない（HTTP 402 / 403 は「X の現在の API プランでは…」と表示） |
+| Threads（`threads/threads-adapter.ts`） | `GET {id}/insights?metric=views,likes,replies,reposts,quotes,shares`。表示 = `views`、コメント = `replies`、シェア = `reposts` + `quotes` + `shares`。保存は取得しない | `GET me/threads_insights?metric=followers_count` | `threads_manage_insights` |
+| Instagram（`instagram/instagram-adapter.ts`） | `GET {media-id}/insights?metric=views,reach,likes,comments,shares,saved`。保存 = `saved` | `GET me?fields=followers_count` | `instagram_business_manage_insights`（フォロワー数は `instagram_business_basic` も必要） |
+
+- リーチは Instagram のみ。X と Threads は `null`
+- Instagram の `impressions` は使わない（メディアでは 2024-07-02 以降非推奨のため）
+- クリック数は、どの SNS からも取得しない（API が確認できないため）。`PostMetric.clicks` は常に `null`
+- 確認元：X は公式ドキュメント（Get Posts by IDs）と公式 SDK（@xdevplatform/xdk）、Threads は Meta 公式サンプル（github.com/fbsamples/threads_api）、Instagram は公式ドキュメント（Instagram Media Insights / IG User）
+- 本物のキーでの数値取得は未確認（開発環境にキーがない）
 
 ### 環境変数
 
@@ -210,6 +230,10 @@ type SocialErrorKind =
   | "NOT_IMPLEMENTED"
   | "UNKNOWN";
 ```
+
+### 分類の注意（Meta・HTTP 402）
+
+Meta の権限エラー（エラーコード 10 と 200〜299）と HTTP 402 は `PERMISSION` に分類する（`lib/social/http.ts`）。Meta は権限エラーを HTTP 400 で返すため、先に判定する。
 
 ### リトライ可否判定
 

@@ -22,7 +22,8 @@
     "test:e2e": "playwright test",
     "worker:post": "tsx workers/post-worker.ts",
     "worker:media": "tsx workers/media-worker.ts",
-    "worker:ai": "tsx workers/ai-worker.ts"
+    "worker:ai": "tsx workers/ai-worker.ts",
+    "worker:analytics": "tsx workers/analytics-worker.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

@@ -663,6 +663,35 @@ SNS アカウント切断。
 
 ---
 
+## 分析 API
+
+投稿の数値・フォロワー数の表示、数値の取得、AI 分析の API。SNS からの取得と AI 分析は Worker が行う。
+
+### GET /api/analytics?brandId=…&days=7|30|90
+
+分析画面の内容（投稿の数値・集計・フォロワー数）を返す。`days` は 7 / 30 / 90 のいずれか（省略・それ以外は 30）。`brandId` は自分のブランドのみ（他人のものは 404）。
+
+### POST /api/analytics/refresh
+
+自分の SNS アカウントの数値を今すぐ取り直す。処理は Worker。**Response (202):** `{ "ok": true }`
+
+### POST /api/analytics/analyze
+
+AI 分析を登録する。**Request:** `{ "brandId": "brand123" }`。**Response (202):** `{ "report": { "id": "...", "status": "QUEUED", ... } }`
+
+- 同じブランドの分析が実行中なら 409（`ANALYSIS_RUNNING`）
+- 結果は `GET /api/analytics/reports` で確認する（`status` が `COMPLETED` になれば完了）
+
+### GET /api/analytics/reports?brandId=…
+
+分析結果の一覧（新しい順、最大 5 件）。`brandId` を省略すると 400（`VALIDATION_ERROR`）。**Response (200):** `{ "reports": [ ... ] }`
+
+### GET /api/analytics/reports/{id}
+
+1件の分析結果（`result` と根拠の `evidence` を含む）。他人のものは 404。**Response (200):** `{ "report": { ... } }`
+
+---
+
 ## エラーコード一覧
 
 | Code | 説明 | HTTP |
@@ -677,6 +706,7 @@ SNS アカウント切断。
 | INTERNAL_ERROR | サーバーエラー | 500 |
 | AGENT_NOT_CONFIGURED | AI Agent の投稿先が未設定 | 400 |
 | AGENT_RUNNING | 同じブランドの計画を作成中 | 409 |
+| ANALYSIS_RUNNING | 同じブランドの分析を実行中 | 409 |
 | AI_NOT_CONFIGURED | AI の APIキーが未設定 | 503 |
 | AI_AUTH | AI の APIキーが不正、または権限なし | 502 |
 | AI_RATE_LIMIT | AI のレート制限 | 429 |

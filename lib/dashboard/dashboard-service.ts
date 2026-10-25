@@ -1,35 +1,33 @@
 import { prisma } from "@/lib/database/prisma";
-import { jstDayRange, jstMonthRange, jstParts } from "@/lib/datetime";
+import { jstWeekRange } from "@/lib/datetime";
 import { listAccounts } from "@/lib/social/account-service";
 
+// ダッシュボードの数値（日本時間の今週＝月曜〜日曜）
 export async function getDashboardStats(userId: string, now: Date = new Date()) {
-  const today = jstDayRange(now);
-  const { year, month } = jstParts(now);
-  const monthRange = jstMonthRange(year, month);
+  const week = jstWeekRange(now);
 
-  const [accounts, todayCount, scheduledCount, monthPublished, monthFailed, draftCount] = await Promise.all([
+  const [accounts, weekPosts, weekPublished, scheduledCount, draftCount] = await Promise.all([
     listAccounts(userId),
-    prisma.post.count({ where: { userId, scheduledAt: { gte: today.start, lt: today.end } } }),
+    // 今週の投稿：今週に予約した投稿と、今週に投稿した投稿
+    prisma.post.count({
+      where: {
+        userId,
+        status: { not: "CANCELLED" },
+        OR: [
+          { scheduledAt: { gte: week.start, lt: week.end } },
+          { platforms: { some: { publishedAt: { gte: week.start, lt: week.end } } } },
+        ],
+      },
+    }),
+    // 成功：今週に投稿できた件数（SNSアカウントごと）
+    prisma.postPlatform.count({
+      where: { post: { userId }, status: "PUBLISHED", publishedAt: { gte: week.start, lt: week.end } },
+    }),
     prisma.post.count({ where: { userId, status: "SCHEDULED" } }),
-    prisma.postPlatform.count({
-      where: { post: { userId }, status: "PUBLISHED", publishedAt: { gte: monthRange.start, lt: monthRange.end } },
-    }),
-    prisma.postPlatform.count({
-      where: { post: { userId }, status: "FAILED", updatedAt: { gte: monthRange.start, lt: monthRange.end } },
-    }),
     prisma.post.count({ where: { userId, status: { in: ["DRAFT", "READY"] } } }),
   ]);
 
-  const attempted = monthPublished + monthFailed;
-  return {
-    accounts,
-    todayCount,
-    scheduledCount,
-    monthPublished,
-    draftCount,
-    // 今月の成功率（投稿を試みた件数が0なら null）
-    successRate: attempted === 0 ? null : Math.round((monthPublished / attempted) * 100),
-  };
+  return { accounts, weekPosts, weekPublished, scheduledCount, draftCount };
 }
 
 export async function getCalendarPosts(userId: string, range: { start: Date; end: Date }) {

@@ -43,6 +43,8 @@ type Props = {
   approvalMode: ApprovalMode;
   // 投稿先に選べるアカウント（接続済みのもの）
   accounts: PostFormAccount[];
+  // 新規作成時の初期値（分析の「次回の投稿案」などから開いたとき）
+  defaults?: { topic?: string; brandId?: string; autoGenerate?: boolean };
 };
 
 // datetime-local 用の "YYYY-MM-DDTHH:mm"（ブラウザのローカル時刻）
@@ -55,7 +57,7 @@ const accountLabel = (a: { label: string; accountName: string }) => (a.label ? `
 
 type Action = "draft" | "schedule" | "publish";
 
-export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
+export function PostForm({ initial, brands, approvalMode, accounts, defaults }: Props) {
   const router = useRouter();
   const initialTargets = (initial?.targets ?? []).filter((t) => t.socialAccountId);
   const initialContents = Object.fromEntries(initialTargets.map((t) => [t.socialAccountId as string, t.content]));
@@ -71,8 +73,10 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
   ].sort((a, b) => PLATFORM_ORDER.indexOf(a.platform) - PLATFORM_ORDER.indexOf(b.platform));
 
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [topic, setTopic] = useState(initial?.topic ?? "");
-  const [brandId, setBrandId] = useState(initial?.brandId ?? brands[0]?.id ?? "");
+  const [topic, setTopic] = useState(initial?.topic ?? defaults?.topic ?? "");
+  const [brandId, setBrandId] = useState(
+    initial?.brandId ?? brands.find((b) => b.id === defaults?.brandId)?.id ?? brands[0]?.id ?? "",
+  );
   const [selected, setSelected] = useState<string[]>(initialTargets.map((t) => t.socialAccountId as string));
   const [separate, setSeparate] = useState(initiallySeparate);
   const [common, setCommon] = useState(initialValues[0] ?? "");
@@ -231,7 +235,7 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
         )}
       </section>
 
-      <AiDraftPanel topic={topic} brandId={brandId} onAdopt={adoptDraft} />
+      <AiDraftPanel topic={topic} brandId={brandId} onAdopt={adoptDraft} autoGenerate={defaults?.autoGenerate} />
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <fieldset>
