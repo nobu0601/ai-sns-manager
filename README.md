@@ -116,6 +116,7 @@ Windows（PowerShell）で `openssl` が無い場合：
 | `SOCIAL_PROVIDER_MODE` | | `mock`（初期値・実際には投稿しない）/ `live`（登録した APIキーで実際に投稿） |
 | `MOCK_TRANSIENT_FAILURE_RATE` | | Mock で一時失敗させる割合（0〜1）。リトライ確認用 |
 | `ANTHROPIC_API_KEY` | | Claude の APIキー。AI 投稿生成で使用。設定状況は「設定」画面で確認できる |
+| `ALLOWED_EMAILS` | 公開時 | 新規登録できるメールアドレス（カンマ区切り）。公開URLで動かすときは必ず設定する |
 | `ANTHROPIC_MODEL` | | 使用するモデル（空なら `claude-sonnet-5-5`） |
 | `ANTHROPIC_EFFORT` | | 考える深さ `low` / `medium` / `high`（空なら `medium`） |
 | `AI_PROVIDER_MODE` | | `claude` / `mock`。空なら APIキーがあれば Claude、なければ Mock（決まった例文を返す） |

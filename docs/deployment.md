@@ -38,6 +38,7 @@ AI SNS Manager の本番運用には次の 4 つが必要です。
 | `ENCRYPTION_KEY` | `openssl rand -base64 32` で生成。**運用開始後に変更しない**（保存済みの SNS APIキーが復号できなくなる） |
 | `SOCIAL_PROVIDER_MODE` | `live` で実際に投稿する（`mock` は投稿しない）。SNS の APIキーは画面から登録する |
 | `ANTHROPIC_API_KEY` | Claude の APIキー（AI 投稿生成で使用。未設定なら AI は Mock で動作） |
+| `ALLOWED_EMAILS` | 新規登録できるメールアドレス（カンマ区切り）。**公開URLでは必ず設定する**（未設定だと誰でも登録でき、AI・画像生成の APIキーを使われる） |
 
 分析（Phase 4）で新しく追加した環境変数はありません。
 
@@ -80,6 +81,15 @@ npm run db:deploy    # マイグレーション適用（リリースごとに1�
 
 料金プラン・無料枠・スリープの有無などは変わるため、各サービスの公式ドキュメントで確認してください。
 無料プランで Web がスリープしても予約投稿は Worker が実行しますが、**Worker がスリープするプランでは予約投稿が遅れます**。
+
+### Render の無料プランで試す（Web と Worker を1つにまとめる）
+
+無料プランではバックグラウンドワーカーを作れないため、Web サービス1つで Web と Worker を両方動かします。
+
+- Build `npm ci && npm run build`、Start `npm run start:all`（マイグレーション → Worker と Web を同時に起動）
+- 無料の Web サービスは15分アクセスが無いとスリープし、その間は予約投稿・数値の自動取得も止まります（アクセスすると再開し、遅れた予約はその時点で実行されます）
+- 無料の PostgreSQL は作成から一定期間で使えなくなるなど制限があります。続けて使う場合は有料プランに切り替えてください（最新の条件は Render の公式ドキュメントで確認）
+- Redis（Key Value）は BullMQ のため、メモリ上限時の動作（maxmemory policy）を `noeviction` にします
 
 ### Vercel
 
