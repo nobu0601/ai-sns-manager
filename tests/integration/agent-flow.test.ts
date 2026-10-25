@@ -208,6 +208,9 @@ describe.skipIf(!hasTestDatabase)("AI Agent・画像生成（統合）", async (
     await agent.saveAgentConfig(userId, brandId, config());
     await agent.startAgentRun(userId, brandId);
     await expect(agent.startAgentRun(userId, brandId)).rejects.toMatchObject({ code: "AGENT_RUNNING" });
+    // 毎週の自動実行も、実行中なら重ねて開始しない
+    const saved = await agent.saveAgentConfig(userId, brandId, config({ weeklyEnabled: true }));
+    expect(await agent.startWeeklyRun(saved.id)).toBeNull();
   });
 
   it("画像生成：依頼 → AI がプロンプトを作る → 生成 → 完成", async () => {

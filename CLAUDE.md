@@ -84,6 +84,14 @@ workers/post-worker.ts                 BullMQ Worker。投稿の実行は必ず�
 - Claude の呼び出しは `lib/ai/claude-provider.ts` だけに置く。公式 SDK（`@anthropic-ai/sdk`）を使い、`fetch` で直接呼ばない。SDK の使い方を推測で書かない
 - テストや APIキー未設定時は `MockAIProvider`（`setAIProvider()` で差し替え可能）。テストで本物の Claude を呼ばない
 
+## 9. 画像・動画生成と AI エージェントのルール
+
+- 画像・動画の生成は `lib/media/`（`MediaGenerationProvider`）を通す。fal.ai の呼び出しは `fal-provider.ts` だけに置き、公式クライアント（`@fal-ai/client`）を使う。モデルの入出力は公式クライアントの型定義で確認する
+- 生成は時間がかかるため、必ずジョブ（`lib/queue/jobs.ts`）にして Worker で処理する。Web リクエストの中で生成しない
+- AI エージェントの投稿日時はコード（`lib/agent/slots.ts`）がユーザー設定から決める。AI に日時を決めさせない（AI はテーマ・型だけを割り当てる）
+- AI エージェントが作った投稿は、投稿モード「完全自動」以外では必ず承認待ちにする。承認なしで予約する経路を増やさない
+- テストでは `setMediaProvider()`・`setJobDispatcher()` で差し替える。本物の fal.ai を呼ばない
+
 - プロンプトはコードに直書きせず `prompts/`（post-generation / x / instagram / threads / image / video）に置く
 - AI の出力は Structured Output / JSON Schema で受け、zod で検証してから保存する。検証失敗時はリトライ
 - 生成後に文字数・禁止ワード・ブランドルール・重複・URL・ハッシュタグ・SNS 仕様をチェックし、問題があれば再生成

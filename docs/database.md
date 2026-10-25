@@ -110,6 +110,16 @@ WARNING
 ERROR
 ```
 
+### 画像・動画・AI Agent の enum
+
+| Enum | 値 |
+|------|----|
+| MediaType | `IMAGE`, `VIDEO` |
+| MediaProvider | `FAL_AI`, `MOCK` |
+| MediaStatus | `PENDING`, `GENERATING`, `READY`, `FAILED` |
+| AgentRunTrigger | `MANUAL`（ボタン）, `SCHEDULED`（毎週の自動実行） |
+| AgentRunStatus | `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED` |
+
 ---
 
 ## Models
@@ -132,6 +142,7 @@ ERROR
 - `brands`: Brand[]
 - `socialAccounts`: SocialAccount[]
 - `posts`: Post[]
+- `media`: Media[] / `agentConfigs`: AgentConfig[] / `agentRuns`: AgentRun[]
 
 **Indexes:**
 - `email` (UNIQUE)
@@ -222,13 +233,17 @@ SNS アカウント。API キー類は暗号化。パスワード・秘密情報
 | approvalStatus | ApprovalStatus | 承認状態。デフォルト: PENDING |
 | scheduledAt | DateTime? | 予約日時 |
 | aiGenerated | Boolean | AI が作った案を採用した投稿か。デフォルト: false |
+| agentRunId | String? (fk) | AI Agent が作った投稿の実行 ID（実行記録が消えたら null） |
+| contentPillar | String? | Agent が割り当てた投稿テーマの柱 |
 | createdAt | DateTime | 作成日時 |
 | updatedAt | DateTime | 更新日時 |
 
 **Relations:**
 - `user`: User
 - `brand`: Brand?
+- `agentRun`: AgentRun?
 - `platforms`: PostPlatform[]
+- `media`: Media[]
 
 **Indexes:**
 - `(userId, status)`
@@ -236,6 +251,8 @@ SNS アカウント。API キー類は暗号化。パスワード・秘密情報
 
 **aiGenerated のマイグレーション:** `prisma/migrations/20261025010000_post_ai_generated`。`ALTER TABLE "Post" ADD COLUMN "aiGenerated" BOOLEAN NOT NULL DEFAULT false;` で追加する。既存の投稿は `false` になる。
 一度 `true` になった値は PATCH で `false` に戻らない（`updatePost()` は `post.aiGenerated || input.aiGenerated` で更新）。
+
+**画像・動画と AI Agent のマイグレーション:** `prisma/migrations/20261025020000_media_and_agent`。enum 5 種、テーブル `Media` / `AgentConfig` / `AgentRun` を作り、`Post.agentRunId` / `Post.contentPillar` / `PostPlatform.mediaType` を追加する。既存のデータは変更しない（追加した列は NULL か既定値）。
 
 ---
 
@@ -251,7 +268,8 @@ SNS アカウント別の投稿内容・状態。同じ Post を複数アカウ�
 | socialAccountId | String? (fk) | SNS アカウント ID（切断後は null） |
 | accountName | String | 投稿時点のアカウント名（切断後も履歴で表示） |
 | content | String | 投稿本文（最大 10000 字） |
-| mediaUrls | String[] | 添付画像 URL（Instagram は必須） |
+| mediaUrls | String[] | 添付する画像・動画の URL（1件まで。Instagram は必須） |
+| mediaType | MediaType? | 添付の種類（IMAGE / VIDEO）。`mediaUrls` が空なら null |
 | status | PostPlatformStatus | デフォルト: DRAFT |
 | idempotencyKey | String | 二重投稿防止（`${postId}:${socialAccountId}`） |
 | attempts | Int | 試行回数。デフォルト: 0 |
@@ -297,6 +315,56 @@ SNS アカウント別の投稿内容・状態。同じ Post を複数アカウ�
 - `(postPlatformId, createdAt)`
 
 **AI_GENERATED の記録:** `POST /api/posts` で `aiGenerated` 付きの投稿を作成したとき、投稿の PostPlatform ごとに1件ずつ `event = AI_GENERATED`、`status = INFO`、`message = "AIが作った投稿案を採用しました"`、`metadata = { model, style }` を残す（`POST_CREATED` と同じトランザクション）。PATCH では記録しない。
+
+---
+
+### Media
+
+生成した画像・動画（fal.ai など）。`status = READY` のものが画面に出る。`id` / `createdAt` / `updatedAt` は省略。
+
+| Column | Type | 説明 |
+|--------|------|------|
+| userId | String (fk) | 所有者 |
+| postId | String? (fk) | 添付先の投稿（投稿削除で null） |
+| type / provider | MediaType / MediaProvider | 種類 / 生成元（FAL_AI・MOCK） |
+| idea | String | ユーザーが書いたイメージ（日本語） |
+| prompt / script | String | AI が作った生成プロンプト（英語）/ 動画の構成メモ（日本語） |
+| aspectRatio / model | String | 縦横比（既定 "1:1"）/ 使ったモデル名 |
+| url / status / errorMessage | String? / MediaStatus / String? | 公開 URL / 状態 / ユーザー向けエラー |
+
+**Indexes:** `(userId, createdAt)`
+
+---
+
+### AgentConfig
+
+ブランドごとの AI Agent 設定（1ブランドに1つ。`brandId` は UNIQUE）。`id` / `createdAt` / `updatedAt` / `userId` は省略。
+
+| Column | Type | 説明 |
+|--------|------|------|
+| brandId | String (fk, UNIQUE) | 対象ブランド（削除で一緒に削除） |
+| weeklyEnabled | Boolean | 毎週の自動実行。デフォルト: false |
+| runWeekday / runTime | Int / String | 自動実行の曜日（0=日〜6=土）と時刻 HH:mm（日本時間）。既定 1 / "09:00" |
+| postsPerWeek / preferredWeekdays / preferredTime | Int / Int[] / String | 投稿枠の数（既定 3）、優先曜日（既定 [1,3,5]）、時刻（既定 "12:00"） |
+| targetAccountIds | String[] | 投稿先の SocialAccount ID |
+| generateImages | Boolean | 投稿ごとに画像を作るか。デフォルト: false |
+
+---
+
+### AgentRun
+
+AI Agent の実行記録。`trigger` が `SCHEDULED` なら毎週の自動実行。
+
+| Column | Type | 説明 |
+|--------|------|------|
+| userId / brandId | String (fk) | 所有者 / 対象ブランド |
+| trigger / status | AgentRunTrigger / AgentRunStatus | 起動元 / 状態 |
+| periodStart / periodEnd | DateTime? | 計画の対象期間（先頭と末尾の投稿枠） |
+| plan | Json? | 投稿枠ごとの計画（テーマ・型・柱・理由・画像案・予定日時） |
+| summary / errorMessage | String? | 結果の説明（作成数・確認が必要な点）/ 失敗理由 |
+| finishedAt | DateTime? | 完了・失敗日時 |
+
+**Relations:** `posts`: Post[]（作られた投稿）。**Indexes:** `(userId, createdAt)`
 
 ---
 
@@ -428,10 +496,6 @@ npm run db:studio
 ---
 
 ## 今後の拡張
-
-### Phase 3 で追加予定
-
-- Media モデル（生成した画像・動画。投稿への添付）
 
 ### Phase 4 で追加予定
 

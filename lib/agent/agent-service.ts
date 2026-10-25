@@ -87,6 +87,12 @@ export async function startAgentRun(userId: string, brandId: string, trigger: Ag
 export async function startWeeklyRun(configId: string): Promise<string | null> {
   const config = await prisma.agentConfig.findUnique({ where: { id: configId } });
   if (!config || !config.weeklyEnabled) return null;
+  // 手動の実行と重ならないようにする
+  const running = await prisma.agentRun.findFirst({ where: { brandId: config.brandId, status: { in: ["QUEUED", "RUNNING"] } } });
+  if (running) {
+    logger.info("agent.weekly_skipped", { configId, runningRunId: running.id });
+    return null;
+  }
   const run = await prisma.agentRun.create({ data: { userId: config.userId, brandId: config.brandId, trigger: "SCHEDULED" } });
   return run.id;
 }
@@ -212,7 +218,7 @@ export async function executeAgentRun(runId: string, now: Date = new Date()): Pr
     const mode = user.approvalMode === "AUTO" ? "完全自動モードのため、承認なしで予約します" : "内容を確認して承認すると予約されます";
     const summary = [
       `${slotLabel(slots[0])}〜${slotLabel(slots[slots.length - 1])}の投稿を${created.length}件作りました。${mode}。`,
-      ...(needsImage ? ["画像は生成中です（できあがると自動で添付されます）。"] : []),
+      ...(needsImage ? ["画像もAIで作成し、できあがった投稿から自動で添付します。"] : []),
       ...(problems.length > 0 ? [`確認が必要な点：${problems.join(" / ")}`] : []),
     ].join("\n");
     await prisma.agentRun.update({ where: { id: run.id }, data: { status: "COMPLETED", summary, finishedAt: new Date() } });

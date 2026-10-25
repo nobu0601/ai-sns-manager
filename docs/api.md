@@ -29,7 +29,6 @@
 - `404 Not Found`: リソース未検出
 - `409 Conflict`: 状態遷移エラー (例: 投稿中は編集不可)
 - `500 Internal Server Error`: サーバーエラー (code: `INTERNAL_ERROR`)
-- `501 Not Implemented`: 未実装機能（画像・動画生成。Phase 3）
 
 ---
 
@@ -139,6 +138,8 @@
   ]
 }
 ```
+
+`targets[].mediaType`（任意）は `"IMAGE"` / `"VIDEO"` / `null`。`mediaUrls` が空のときは保存されず `null` になる。PATCH も同じ形式。
 
 `aiGenerated`（任意）は、`POST /api/ai/drafts` の案を採用したときに `{ "model": "claude-sonnet-5-5", "style": "howto" }` を渡す（`model` 100字以内、`style` 50字以内。型の列挙は検証しない）。指定すると `Post.aiGenerated = true` になり、作成時に `AI_GENERATED` の PostLog（metadata に model / style）が残る。省略・`null` は手動作成。承認モードが `AI_ONLY` のとき、AI 由来の投稿は承認待ち（PENDING）になる。
 
@@ -597,13 +598,68 @@ SNS アカウント切断。
 
 ---
 
-## メディア生成 API（Phase 3）
+## 画像・動画 API
+
+生成は Worker が行う（数十秒〜数分）。`POST` は `PENDING` の Media を返すので、`GET /api/media/{id}` で `status` を確認する。
 
 ### POST /api/media/generate
 
-テキストから画像を AI 生成。
+画像または動画の生成を登録する。**Response (202):** `{ "media": { "id": "...", "status": "PENDING", ... } }`
 
-**Response (501):** Not Implemented
+**Request:** `{ "type": "IMAGE", "idea": "店内の窓際で作業する人の後ろ姿", "aspectRatio": "4:5", "brandId": null, "postId": null }`
+
+- `type`: `IMAGE` / `VIDEO`。`aspectRatio`: `1:1`（既定）/ `4:5` / `9:16` / `16:9`
+- `idea`: 日本語のイメージ（1〜500字）。英語の生成プロンプトは AI が作り、`Media.prompt`（動画は `script` も）に保存する
+- `brandId` / `postId`: 任意。他人のものは 404。`postId` を指定すると、完成時に同じ投稿の、その種類を投稿できる DRAFT の投稿先に自動で添付される
+
+キューに登録できなければ 503（`QUEUE_UNAVAILABLE`）。生成の失敗は API のエラーではなく、`Media.status = FAILED` と `errorMessage` に残る。
+
+### GET /api/media
+
+最近できあがった（`status = READY`）画像・動画を最大12件。**Response (200):** `{ "media": [ ... ] }`
+
+### GET /api/media/{id}
+
+1件の状態と URL。**Response (200):** `{ "media": { "status": "READY", "url": "https://...", "prompt": "...", ... } }`。`status`: `PENDING` / `GENERATING` / `READY` / `FAILED`
+
+---
+
+## AI Agent API
+
+ブランドごとの設定と、今後7日間の投稿計画を作る Agent の API。計画の作成は Worker が行う。
+
+### GET /api/agent/config?brandId=…
+
+設定を取得（未設定なら `{ "config": null }`）。**PUT /api/agent/config?brandId=…** で保存する。`brandId` を省略すると 400。
+
+**Request（PUT）:** `{ "weeklyEnabled": true, "runWeekday": 1, "runTime": "09:00", "postsPerWeek": 3, "preferredWeekdays": [1, 3, 5], "preferredTime": "12:00", "targetAccountIds": ["account123"], "generateImages": false }`
+
+- `runWeekday`（0=日〜6=土）と `runTime`（HH:mm）は毎週の自動実行の日時（日本時間）。`weeklyEnabled: false` にすると登録を解除する
+- `postsPerWeek`: 1〜7。`preferredWeekdays` / `preferredTime`: 投稿枠の優先曜日・時刻
+- `targetAccountIds`: 自分の SNS アカウントのみ（他人のものは 404）。最大20件
+- `generateImages`: `true` なら投稿ごとに画像を生成する。Instagram を投稿先に含む場合は、この値にかかわらず生成する
+
+**Response (200):** `{ "config": { ... } }`（`AgentConfig` のフィールド）
+
+### POST /api/agent/run
+
+`{ "brandId": "brand123" }` で、今後7日間の投稿を作る実行を登録する。**Response (202):** `{ "run": { "id": "...", "status": "QUEUED", ... } }`
+
+- 投稿先が未設定なら 400（`AGENT_NOT_CONFIGURED`）。同じブランドが実行中なら 409（`AGENT_RUNNING`）
+
+### GET /api/agent/runs?brandId=…
+
+実行記録の一覧（新しい順、最大10件）。`brandId` 省略時はすべてのブランド。**Response (200):** `{ "runs": [ ... ] }`（各 run は `brand` と `posts` を含む）
+
+### GET /api/agent/runs/{id}
+
+1件の実行記録。`plan`（投稿枠ごとのテーマ・型・理由）と `summary` を含む。**Response (200):** `{ "run": { ... } }`
+
+### POST /api/agent/runs/{id}/approve
+
+実行で作られた投稿をまとめて承認し、計画した日時で予約する。**Response (200):** `{ "results": [ { "postId": "...", "title": "...", "ok": true }, { "postId": "...", "title": "...", "ok": false, "message": "計画した日時を過ぎています…" } ] }`
+
+対象は `DRAFT` / `READY` の投稿のみ。承認モードが `AUTO` の投稿は作成時に予約済みのため対象外。
 
 ---
 
@@ -619,7 +675,8 @@ SNS アカウント切断。
 | QUEUE_UNAVAILABLE | ジョブキュー利用不可 | 503 |
 | NOT_FOUND | リソース未検出 | 404 |
 | INTERNAL_ERROR | サーバーエラー | 500 |
-| NOT_IMPLEMENTED | 未実装 | 501 |
+| AGENT_NOT_CONFIGURED | AI Agent の投稿先が未設定 | 400 |
+| AGENT_RUNNING | 同じブランドの計画を作成中 | 409 |
 | AI_NOT_CONFIGURED | AI の APIキーが未設定 | 503 |
 | AI_AUTH | AI の APIキーが不正、または権限なし | 502 |
 | AI_RATE_LIMIT | AI のレート制限 | 429 |

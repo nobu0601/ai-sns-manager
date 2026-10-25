@@ -87,7 +87,7 @@ lib/
 
 ### 4. Queue & Worker
 
-BullMQ (Redis) で予約投稿を管理。Worker プロセスが定時に `publishPostPlatform()` を実行。
+BullMQ (Redis) で予約投稿・画像/動画生成・AI Agent を管理する。Worker（`workers/`）が各キューを処理する（詳細は「Worker の構成」）。
 
 ### 5. Database (Prisma + PostgreSQL)
 
@@ -142,6 +142,8 @@ lib/ai/
 interface AIProvider {
   readonly name: string;
   generate(request: GenerateRequest): Promise<GenerateResult>;
+  mediaPrompt(request: MediaPromptRequest): Promise<MediaPromptResult>; // 画像・動画の生成プロンプト
+  planWeek(request: PlanRequest): Promise<PlanResult>; // AI Agent の投稿テーマ計画
 }
 ```
 
@@ -180,6 +182,62 @@ interface AIProvider {
 - 案は保存しない。`POST /api/ai/drafts` は結果を返すだけ
 - 投稿フォームが採用した案を `POST /api/posts` に `aiGenerated: { model, style }` 付きで送ると、`Post.aiGenerated = true` と `AI_GENERATED` ログが残る
 - 承認モード `AI_ONLY` では AI 由来の投稿が承認待ちになる（`initialApprovalStatus()`）
+
+## 画像・動画生成
+
+```
+lib/media/
+  types.ts          ← MediaGenerationProvider / AspectRatio
+  registry.ts       ← getMediaProvider(): fal / mock の選択
+  fal-provider.ts   ← FalAIProvider（fal.ai）
+  mock-provider.ts  ← MockMediaProvider
+  media-service.ts  ← requestMedia() / processMedia() / 投稿への添付
+  errors.ts         ← MediaGenerationError（ユーザー向けの文を持つ）
+```
+
+- **FalAIProvider**（`FAL_KEY` が必要）: 画像は `fal-ai/flux-1/schnell`（`FAL_IMAGE_MODEL` で変更）、動画は `fal-ai/kling-video/v2.5-turbo/pro/text-to-video`（`FAL_VIDEO_MODEL`）。動画は10秒。返された公開 URL をそのまま保存する。HTTP 401/403 → AUTH、429 → RATE_LIMIT、400/422 → REJECTED、その他 → UNAVAILABLE
+- **MockMediaProvider**: 画像はプレースホルダー画像、動画は架空の URL（再生できない）
+- **registry**: `MEDIA_PROVIDER_MODE`（`fal` / `mock`）。未指定なら `FAL_KEY` があれば fal、なければ mock
+- **生成プロンプトは AI が作る**: `AIProvider.mediaPrompt()` が `prompts/image/system.md` または `prompts/video/system.md` を使い、英語のプロンプトを作る（動画は日本語の構成メモ `script` も）。作成済みのプロンプトは再試行時に再利用する
+
+流れ:
+1. `POST /api/media/generate` が `Media`（PENDING）を作り、`media-generate` キューに登録する（jobId `media_{id}`、最大2回試行、失敗から30秒後に再試行）
+2. media worker の `processMedia()` が GENERATING にし、プロンプトを作って生成し、READY で `url` を保存する
+3. 再試行対象（RATE_LIMIT / UNAVAILABLE）は PENDING に戻す。それ以外は FAILED と `errorMessage` を残す
+4. READY かつ `postId` があれば `onMediaReadyForPost()`：DRAFT の投稿先のうち、その種類を投稿できるものに `mediaUrls` / `mediaType` を設定し、`POST_UPDATED` ログを残す
+
+## SNS への画像・動画投稿
+
+`lib/social/media.ts` の `primaryMedia()` が1投稿1メディアを決める（`mediaType` が無ければ URL の拡張子で推定）。各 Adapter が呼ぶ API（ファイル冒頭のコメントより）:
+
+- **X**（`x/x-adapter.ts`）: 画像は `POST /2/media/upload`。動画は `upload/initialize` → `upload/{id}/append`（4MB ずつ）→ `finalize` → `STATUS` で処理完了を待つ。投稿は `POST /2/tweets` の `media.media_ids`
+- **Threads**（`threads/threads-adapter.ts`）: `POST me/threads`（`media_type` = IMAGE / VIDEO、`image_url` / `video_url`）でコンテナを作る → `GET {id}?fields=status,error_message` で状態確認 → `POST me/threads_publish`
+- **Instagram**（`instagram/instagram-adapter.ts`）: 画像は `POST {ig-user-id}/media`（`image_url`）。動画は `media_type=REELS`（`video_url`）。`status_code` が FINISHED になるまで待ち、`POST {ig-user-id}/media_publish`。画像・動画が必須
+
+## AI Agent
+
+`lib/agent/`（`agent-service.ts` / `slots.ts` / `plan-check.ts`）が、ブランドごとに今後7日間の投稿を作る。**日時はコードで決め、AI はテーマ・型・画像のアイデアだけを決める。**
+
+1. 直近30件の投稿履歴と、今後の予定を読む
+2. `computeSlots()`: 1時間後から7日以内に `postsPerWeek` 件の枠を作る。`preferredWeekdays` の曜日を優先し、予定のある日は避け、間隔を均等にする（JST）
+3. `planWeek()` → `checkPlan()`: 枠の欠落・重複、型、投稿テーマの柱（登録済みか、偏りすぎていないか）を確認する。違反があれば指摘を付けて作り直す（計2回まで。`PLAN_ATTEMPTS`）。直らなければ run は FAILED
+4. 枠ごとに `generateDrafts()`（その枠の型で1案。品質チェック込み）→ `createPost()`（`aiGenerated` に model / style、投稿先は実行時の対象アカウント）→ `scheduledAt` / `agentRunId` / `contentPillar` を設定
+5. 画像：`generateImages` が true か Instagram が対象なら `requestMedia(IMAGE)`（Instagram を含むと 4:5、それ以外は 1:1、`postId` 付き）
+6. 承認：承認モードが `AUTO` なら、画像なしは作成直後に `schedulePost()`、画像ありは画像完成時に予約する（画像の生成に失敗した投稿は DRAFT のまま残る）。それ以外は承認待ち（PENDING）
+7. 結果を `AgentRun.summary` に書く。1件も作れなければ FAILED
+
+- **承認**：`approveAgentRun()`（`POST /api/agent/runs/{id}/approve`）が対象の投稿を計画日時で `schedulePost(approve: true)` する
+- **毎週の自動実行**：`AgentConfig.weeklyEnabled` が true のとき `upsertWeeklyAgent()` が `agent-run` キューに job scheduler（ID `agent-weekly-{configId}`、cron `m h * * 曜日`、`tz: Asia/Tokyo`）を登録する。発火すると `startWeeklyRun()` が `trigger = SCHEDULED` の AgentRun を作る。ai worker の起動時に `reconcileWeeklySchedules()` が DB の設定に合わせて登録し直す
+
+## Worker の構成
+
+`workers/index.ts`（`npm run worker`）は下の3つを1プロセスで起動する。各ファイルは `npm run worker:post` などで単独でも起動できる。`run.ts` が起動と終了（SIGINT / SIGTERM）を共通化する。
+
+| Worker | ファイル | キュー | 同時実行 | 役割 |
+|--------|----------|--------|----------|------|
+| post | `post-worker.ts` | `post-publish` | 5 | 予約投稿の実行（起動時に予約中の投稿を再登録） |
+| media | `media-worker.ts` | `media-generate` | 2 | 画像・動画の生成 |
+| ai | `ai-worker.ts` | `agent-run` | 1 | AI Agent の実行（手動と毎週） |
 
 ## Adapter パターン
 
@@ -340,8 +398,12 @@ ai-sns-manager/
         threads-adapter.ts    (Step 13)
     queue/
       post-queue.ts
+      jobs.ts           ← 画像・動画 / AI Agent のキュー
       retry.ts
       connection.ts
+    ai/                 ← 投稿案・計画・生成プロンプト（claude-provider / mock-provider）
+    media/              ← 画像・動画生成（fal-provider / mock-provider / media-service）
+    agent/              ← AI Agent（agent-service / slots / plan-check）
     encryption/
       crypto.ts
     logging/
@@ -357,7 +419,9 @@ ai-sns-manager/
       service-error.ts
       user-messages.ts
   workers/
-    post-worker.ts
+    index.ts            ← 3つの Worker を1プロセスで起動
+    post-worker.ts / media-worker.ts / ai-worker.ts
+    run.ts
   prisma/
     schema.prisma
     seed.ts
