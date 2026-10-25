@@ -63,6 +63,7 @@ export async function publishPostPlatform(
       platform,
       content: target.content,
       mediaUrls: target.mediaUrls,
+      mediaType: target.mediaType,
       idempotencyKey: target.idempotencyKey,
     };
 

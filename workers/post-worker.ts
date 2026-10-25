@@ -1,4 +1,4 @@
-// 予約投稿を実行する Worker。Webサーバーとは別プロセスで起動する（npm run worker）。
+// 予約投稿を実行する Worker。Webサーバーとは別プロセスで起動する（npm run worker でまとめて起動）。
 import { UnrecoverableError, Worker } from "bullmq";
 import { prisma } from "@/lib/database/prisma";
 import { logger } from "@/lib/logging/logger";
@@ -6,6 +6,7 @@ import { publishPostPlatform } from "@/lib/posts/publish-service";
 import { createRedisConnection } from "@/lib/queue/connection";
 import { POST_PUBLISH_QUEUE, bullmqScheduler, type PublishJobData } from "@/lib/queue/post-queue";
 import { MAX_PUBLISH_ATTEMPTS, retryDelayMs } from "@/lib/queue/retry";
+import { isMain, runWorkers } from "./run";
 
 // Redis のデータ消失などで「DBでは予約中なのにジョブが無い」状態を起動時に補正する
 async function reconcileScheduledPosts(): Promise<void> {
@@ -23,7 +24,7 @@ async function reconcileScheduledPosts(): Promise<void> {
   if (pending.length > 0) logger.info("worker.reconciled", { count: pending.length });
 }
 
-async function main() {
+export async function startPostWorker(): Promise<Worker[]> {
   await reconcileScheduledPosts();
 
   const worker = new Worker<PublishJobData>(
@@ -49,19 +50,8 @@ async function main() {
   );
 
   worker.on("ready", () => logger.info("worker.ready", { queue: POST_PUBLISH_QUEUE }));
-  worker.on("error", (err) => logger.error("worker.error", { error: err.message }));
-
-  const shutdown = async () => {
-    logger.info("worker.shutdown");
-    await worker.close();
-    await prisma.$disconnect();
-    process.exit(0);
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  worker.on("error", (err) => logger.error("worker.error", { queue: POST_PUBLISH_QUEUE, error: err.message }));
+  return [worker];
 }
 
-main().catch((err) => {
-  logger.error("worker.fatal", { error: err instanceof Error ? err.message : String(err) });
-  process.exit(1);
-});
+if (isMain(import.meta.url)) runWorkers(startPostWorker);

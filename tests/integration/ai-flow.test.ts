@@ -64,9 +64,11 @@ describe.skipIf(!hasTestDatabase)("AI投稿生成（統合）", async () => {
 
   it("直らない場合は作り直しの上限で止め、問題を案に付けて返す", async () => {
     const calls: unknown[] = [];
-    setAIProvider({
-      name: "too-long",
-      async generate(req) {
+    // 文章が長すぎる案を返し続ける AI（それ以外の機能は Mock のまま）
+    const tooLong = new MockAIProvider();
+    setAIProvider(tooLong);
+    Object.assign(tooLong, {
+      async generate(req: import("@/lib/ai/types").GenerateRequest) {
         calls.push(req);
         return {
           model: "test",

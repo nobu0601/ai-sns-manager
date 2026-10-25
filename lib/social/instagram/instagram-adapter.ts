@@ -2,6 +2,7 @@ import { PLATFORM_CAPABILITIES } from "../capabilities";
 import { SocialPublishError } from "../errors";
 import type { FetchLike } from "../http";
 import { GraphClient, withVersion } from "../meta/graph";
+import { primaryMedia } from "../media";
 import { validateAgainstCapabilities } from "../validate";
 import type {
   PlatformCredentials,
@@ -17,10 +18,12 @@ import type {
 // 公式ドキュメント（Content Publishing / Media Publish）の内容：
 //   ホスト graph.instagram.com
 //   画像の投稿：POST {ig-user-id}/media（image_url, caption）→ コンテナID
+//   動画の投稿：POST {ig-user-id}/media（media_type=REELS, video_url, caption）→ コンテナID
 //             GET {container-id}?fields=status_code が FINISHED になるまで待つ
 //             POST {ig-user-id}/media_publish（creation_id）
 //   必要な権限：instagram_business_basic, instagram_business_content_publish
 type WaitOptions = Parameters<GraphClient["waitForContainer"]>[2];
+const VIDEO_WAIT = { attempts: 60, intervalMs: 5000 };
 
 export class InstagramAdapter implements SocialPlatformAdapter {
   readonly platform = "INSTAGRAM" as const;
@@ -47,14 +50,19 @@ export class InstagramAdapter implements SocialPlatformAdapter {
   }
 
   async createPost(post: PlatformPost, credentials: PlatformCredentials, account: VerifiedAccount): Promise<PublishedPost> {
-    const imageUrl = post.mediaUrls?.[0];
-    if (!imageUrl) throw new SocialPublishError("CONTENT", "INSTAGRAM", "image_url is required");
+    const media = primaryMedia(post);
+    if (!media) throw new SocialPublishError("CONTENT", "INSTAGRAM", "image_url or video_url is required");
     const graph = this.client(credentials);
     const igUserId = account.externalAccountId;
 
-    const container = await graph.post<{ id?: string }>(`${igUserId}/media`, { image_url: imageUrl, caption: post.content });
+    // 動画はリールとして投稿する（media_type=REELS, video_url）
+    const params: Record<string, string> =
+      media.type === "VIDEO"
+        ? { media_type: "REELS", video_url: media.url, caption: post.content }
+        : { image_url: media.url, caption: post.content };
+    const container = await graph.post<{ id?: string }>(`${igUserId}/media`, params);
     if (!container.id) throw new SocialPublishError("UNKNOWN", "INSTAGRAM", "no container id", container);
-    await graph.waitForContainer(container.id, "status_code", this.waitOptions);
+    await graph.waitForContainer(container.id, "status_code", media.type === "VIDEO" ? { ...VIDEO_WAIT, ...this.waitOptions } : this.waitOptions);
     const published = await graph.post<{ id?: string }>(`${igUserId}/media_publish`, { creation_id: container.id });
     if (!published.id) throw new SocialPublishError("UNKNOWN", "INSTAGRAM", "no published id", published);
 

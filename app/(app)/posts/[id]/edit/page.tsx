@@ -39,6 +39,7 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
             accountName: p.accountName,
             content: p.content,
             mediaUrls: p.mediaUrls,
+            mediaType: p.mediaType,
           })),
         }}
       />

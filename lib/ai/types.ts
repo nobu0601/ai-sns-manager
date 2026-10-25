@@ -51,10 +51,61 @@ export interface GenerateResult {
   usage?: { inputTokens: number; outputTokens: number };
 }
 
+// 画像・動画の生成プロンプト作成の依頼
+export interface MediaPromptRequest {
+  type: "IMAGE" | "VIDEO";
+  idea: string;
+  aspectRatio: string;
+  brand: BrandContext | null;
+}
+
+export interface MediaPromptResult {
+  prompt: string;
+  script: string;
+  model: string;
+}
+
+// AI Agent の計画（決まった投稿枠ごとにテーマを割り当てる）
+export interface PlanSlot {
+  index: number;
+  label: string; // 例：10/27(月) 12:00
+}
+
+export interface PlanHistoryItem {
+  date: string;
+  title: string;
+  topic: string;
+  pillar: string | null;
+  status: string;
+}
+
+export interface PlanRequest {
+  brand: BrandContext;
+  slots: PlanSlot[];
+  history: PlanHistoryItem[];
+  feedback?: string[];
+}
+
+export interface PlanItem {
+  slotIndex: number;
+  pillar: string;
+  topic: string;
+  style: DraftStyle;
+  reason: string;
+  imageIdea: string;
+}
+
+export interface PlanResult {
+  items: PlanItem[];
+  model: string;
+}
+
 // AI の呼び出し先。Claude のほか、テスト・キー未設定時の Mock を差し替えられる
 export interface AIProvider {
   readonly name: string;
   generate(request: GenerateRequest): Promise<GenerateResult>;
+  mediaPrompt(request: MediaPromptRequest): Promise<MediaPromptResult>;
+  planWeek(request: PlanRequest): Promise<PlanResult>;
 }
 
 // 画面に返す投稿案（品質チェックの結果つき）

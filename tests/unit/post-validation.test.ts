@@ -31,7 +31,7 @@ describe("SNS別の投稿チェック", () => {
   it("Instagram は画像URLが必須。https の公開URLのみ受け付ける", () => {
     const check2 = (mediaUrls?: string[]) =>
       validateAgainstCapabilities({ platform: "INSTAGRAM", content: "キャプション", mediaUrls, idempotencyKey: "k" }, PLATFORM_CAPABILITIES.INSTAGRAM);
-    expect(check2().errors[0]).toContain("画像のURLを入力してください");
+    expect(check2().errors[0]).toContain("画像または動画を添付してください");
     expect(check2(["http://example.com/a.jpg"]).valid).toBe(false);
     expect(check2(["https://example.com/a.jpg"]).valid).toBe(true);
   });

@@ -1,9 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { AIError } from "./errors";
-import { systemPrompt, userPrompt } from "./prompts";
-import { draftSetSchema } from "./schema";
-import type { AIProvider, GenerateRequest, GenerateResult } from "./types";
+import type * as z from "zod/v4";
+import { mediaUserPrompt, planUserPrompt, promptFile, systemPrompt, userPrompt } from "./prompts";
+import { draftSetSchema, mediaPromptSchema, planSchema } from "./schema";
+import type {
+  AIProvider,
+  GenerateRequest,
+  GenerateResult,
+  MediaPromptRequest,
+  MediaPromptResult,
+  PlanRequest,
+  PlanResult,
+} from "./types";
 
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
 type Effort = "low" | "medium" | "high" | "xhigh" | "max";
@@ -23,7 +32,8 @@ export class ClaudeProvider implements AIProvider {
     this.client = client ?? new Anthropic({ maxRetries: 2 });
   }
 
-  async generate(request: GenerateRequest): Promise<GenerateResult> {
+  // 構造化出力で1回呼び出す共通処理
+  private async call<T extends z.ZodType>(schema: T, system: string, user: string): Promise<{ output: z.infer<T>; model: string; usage: { inputTokens: number; outputTokens: number } }> {
     let response;
     try {
       response = await this.client.beta.messages.parse({
@@ -31,9 +41,9 @@ export class ClaudeProvider implements AIProvider {
         max_tokens: 16000,
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
-        system: systemPrompt(),
-        messages: [{ role: "user", content: userPrompt(request) }],
-        output_config: { effort: this.effort, format: betaZodOutputFormat(draftSetSchema) },
+        system,
+        messages: [{ role: "user", content: user }],
+        output_config: { effort: this.effort, format: betaZodOutputFormat(schema) },
       });
     } catch (err) {
       throw toAIError(err);
@@ -46,10 +56,26 @@ export class ClaudeProvider implements AIProvider {
       throw new AIError("INVALID_OUTPUT", `stop_reason=${response.stop_reason}`);
     }
     return {
-      drafts: response.parsed_output.drafts,
+      output: response.parsed_output as z.infer<T>,
       model: response.model,
       usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens },
     };
+  }
+
+  async generate(request: GenerateRequest): Promise<GenerateResult> {
+    const { output, model, usage } = await this.call(draftSetSchema, systemPrompt(), userPrompt(request));
+    return { drafts: output.drafts, model, usage };
+  }
+
+  async mediaPrompt(request: MediaPromptRequest): Promise<MediaPromptResult> {
+    const system = promptFile(request.type === "VIDEO" ? "video/system.md" : "image/system.md");
+    const { output, model } = await this.call(mediaPromptSchema, system, mediaUserPrompt(request));
+    return { prompt: output.prompt, script: request.type === "VIDEO" ? output.script : "", model };
+  }
+
+  async planWeek(request: PlanRequest): Promise<PlanResult> {
+    const { output, model } = await this.call(planSchema, promptFile("agent/system.md"), planUserPrompt(request));
+    return { items: output.items, model };
   }
 }
 

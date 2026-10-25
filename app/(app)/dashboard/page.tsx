@@ -8,6 +8,7 @@ import { formatDateTime } from "@/lib/datetime";
 import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
 import { POST_STATUS_LABELS, STATUS_TONES } from "@/lib/labels";
 import { listPosts } from "@/lib/posts/post-service";
+import { listAgentRuns } from "@/lib/agent/agent-service";
 import { PLATFORMS } from "@/lib/social/registry";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,9 @@ function Stat({ label, value, href }: { label: string; value: string; href?: str
 
 export default async function DashboardPage() {
   const userId = await requirePageUserId();
-  const [stats, recent] = await Promise.all([getDashboardStats(userId), listPosts(userId)]);
+  const [stats, recent, runs] = await Promise.all([getDashboardStats(userId), listPosts(userId), listAgentRuns(userId, undefined, 1)]);
+  const latestRun = runs[0];
+  const waitingApproval = latestRun?.posts.filter((p) => p.approvalStatus === "PENDING" && (p.status === "READY" || p.status === "DRAFT")) ?? [];
 
   return (
     <>
@@ -40,6 +43,40 @@ export default async function DashboardPage() {
         <Stat label="今月の投稿" value={`${stats.monthPublished}件`} href="/posts?status=PUBLISHED" />
         <Stat label="投稿成功率（今月）" value={stats.successRate === null ? "-" : `${stats.successRate}%`} />
       </div>
+
+      <Card
+        title="AIエージェント"
+        className="mt-6"
+        action={<Link href="/agent" className="text-sm font-semibold text-brand-600">開く</Link>}
+      >
+        {!latestRun ? (
+          <p className="text-sm text-slate-600">
+            AIが今後7日間の投稿テーマ・投稿文・画像・日時をまとめて計画します。
+            <Link href="/agent" className="ml-1 font-semibold text-brand-600">AIエージェントを使ってみる</Link>
+          </p>
+        ) : (
+          <div className="space-y-2 text-sm">
+            <p className="text-slate-600">
+              最新の計画（{latestRun.brand.name}・{formatDateTime(latestRun.createdAt)}）：
+              {latestRun.status === "COMPLETED" ? `${latestRun.posts.length}件の投稿` : latestRun.status === "FAILED" ? "失敗" : "作成中"}
+            </p>
+            {waitingApproval.length > 0 && (
+              <p className="font-semibold text-amber-800">
+                承認待ちの投稿が {waitingApproval.length} 件あります。
+                <Link href={`/agent?brandId=${latestRun.brandId}`} className="ml-1 underline">確認して承認する</Link>
+              </p>
+            )}
+            <ul className="space-y-1">
+              {latestRun.posts.slice(0, 3).map((p) => (
+                <li key={p.id} className="truncate text-slate-700">
+                  <span className="mr-2 text-xs text-slate-500">{formatDateTime(p.scheduledAt)}</span>
+                  <Link href={`/posts/${p.id}`} className="hover:text-brand-600">{p.title}</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Card>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <Card title="接続SNS" action={<Link href="/accounts" className="text-sm font-semibold text-brand-600">管理する</Link>}>

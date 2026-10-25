@@ -7,6 +7,7 @@ const targetSchema = z.object({
   socialAccountId: z.string().min(1),
   content: z.string().max(10000, "投稿内容が長すぎます"),
   mediaUrls: z.array(z.string().trim().min(1).max(2000)).max(10).default([]),
+  mediaType: z.enum(["IMAGE", "VIDEO"]).nullable().optional(),
 });
 
 export const postInputSchema = z.object({
@@ -54,6 +55,27 @@ export const draftRequestSchema = z.object({
   objective: z.string().trim().max(500).optional(),
   brandId: z.string().nullable().optional(),
   styles: z.array(z.enum(["brand_intro", "empathy", "story", "howto", "question"])).max(5).optional(),
+});
+
+export const mediaRequestSchema = z.object({
+  type: z.enum(["IMAGE", "VIDEO"]),
+  idea: z.string().trim().min(1, "作りたい画像・動画のイメージを入力してください").max(500),
+  aspectRatio: z.enum(["1:1", "4:5", "9:16", "16:9"]).default("1:1"),
+  brandId: z.string().nullable().optional(),
+  postId: z.string().nullable().optional(),
+});
+
+const timeString = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "時刻は HH:mm の形式で入力してください");
+
+export const agentConfigSchema = z.object({
+  weeklyEnabled: z.boolean(),
+  runWeekday: z.number().int().min(0).max(6),
+  runTime: timeString,
+  postsPerWeek: z.number().int().min(1, "週1回以上にしてください").max(7, "週7回までです"),
+  preferredWeekdays: z.array(z.number().int().min(0).max(6)).max(7),
+  preferredTime: timeString,
+  targetAccountIds: z.array(z.string()).max(20),
+  generateImages: z.boolean(),
 });
 
 const credentialValues = z.record(z.string(), z.string().max(2000));

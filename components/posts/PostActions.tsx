@@ -14,19 +14,22 @@ type Props = {
   approvalStatus: ApprovalStatus;
   editable: boolean;
   hasRetryable: boolean;
+  // AI Agent が計画した日時など、予約の初期値にする日時（ISO 文字列）
+  plannedAt?: string | null;
 };
 
-function defaultLocal(): string {
-  const d = new Date(Date.now() + 60 * 60 * 1000);
+function defaultLocal(plannedAt?: string | null): string {
+  const planned = plannedAt ? new Date(plannedAt) : null;
+  const d = planned && planned.getTime() > Date.now() ? planned : new Date(Date.now() + 60 * 60 * 1000);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function PostActions({ postId, status, approvalStatus, editable, hasRetryable }: Props) {
+export function PostActions({ postId, status, approvalStatus, editable, hasRetryable, plannedAt }: Props) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<{ message: string; details: string[] } | null>(null);
-  const [scheduledAt, setScheduledAt] = useState(defaultLocal);
+  const [scheduledAt, setScheduledAt] = useState(() => defaultLocal(plannedAt));
 
   async function run(key: string, path: string, method = "POST", body: unknown = {}) {
     setPending(key);

@@ -38,3 +38,30 @@ describe.skipIf(!hasRedis)("投稿キュー（統合）", async () => {
     expect(await queue.getJob(jobIdFor(key))).toBeUndefined();
   });
 });
+
+// 毎週の自動実行（BullMQ のジョブスケジューラ）
+describe.skipIf(!hasRedis)("AI Agent の毎週の自動実行（統合）", async () => {
+  const { bullmqDispatcher, weeklySchedulerId, AGENT_QUEUE } = await import("@/lib/queue/jobs");
+  const { createRedisConnection } = await import("@/lib/queue/connection");
+  const connection = createRedisConnection();
+  const queue = new Queue(AGENT_QUEUE, { connection });
+  const configId = `test-${randomUUID()}`;
+
+  afterAll(async () => {
+    await bullmqDispatcher.removeWeeklyAgent(configId);
+    await queue.close();
+    await connection.quit();
+  });
+
+  it("日本時間の曜日・時刻で登録し、解除できる", async () => {
+    await bullmqDispatcher.upsertWeeklyAgent(configId, 1, "09:05");
+    const schedulers = await queue.getJobSchedulers();
+    const mine = schedulers.find((s) => s.key === weeklySchedulerId(configId) || s.id === weeklySchedulerId(configId));
+    expect(mine).toBeDefined();
+    expect(mine!.pattern).toBe("5 9 * * 1");
+    expect(mine!.tz).toBe("Asia/Tokyo");
+    await bullmqDispatcher.removeWeeklyAgent(configId);
+    const after = await queue.getJobSchedulers();
+    expect(after.some((s) => s.key === weeklySchedulerId(configId) || s.id === weeklySchedulerId(configId))).toBe(false);
+  });
+});

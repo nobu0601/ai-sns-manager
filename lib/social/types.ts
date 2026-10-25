@@ -37,6 +37,8 @@ export interface PlatformPost {
   platform: Platform;
   content: string;
   mediaUrls?: string[];
+  // mediaUrls の種類（未指定なら URL から推測する）
+  mediaType?: import("@prisma/client").MediaType | null;
   // 二重投稿防止キー（postId:socialAccountId）。SNS側が対応していれば渡す
   idempotencyKey: string;
 }

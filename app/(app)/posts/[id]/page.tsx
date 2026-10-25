@@ -4,7 +4,9 @@ import { Alert } from "@/components/common/Alert";
 import { AutoRefresh } from "@/components/common/AutoRefresh";
 import { Badge } from "@/components/common/Badge";
 import { Card, PageHeader } from "@/components/common/Card";
+import { MediaPreview } from "@/components/posts/MediaPicker";
 import { PostActions } from "@/components/posts/PostActions";
+import { inferMediaType } from "@/lib/social/media";
 import { requirePageUserId } from "@/lib/auth/session";
 import { formatDateTime } from "@/lib/datetime";
 import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
@@ -78,6 +80,19 @@ export default async function PostDetailPage({
                 <dd className="mt-1">{post.brand?.name ?? "-"}</dd>
               </div>
             </dl>
+            {(post.aiGenerated || post.agentRunId) && (
+              <p className="mt-3 text-xs text-slate-500">
+                {post.agentRunId ? (
+                  <>
+                    <Link href="/agent" className="font-semibold text-brand-600">AIエージェント</Link>が作成
+                    {post.contentPillar && `（投稿テーマの柱：${post.contentPillar}）`}
+                    {post.status !== "SCHEDULED" && post.scheduledAt && "。投稿日時は計画した日時で、まだ予約されていません"}
+                  </>
+                ) : (
+                  "AIが作った案から作成"
+                )}
+              </p>
+            )}
             <div className="mt-5 border-t border-slate-100 pt-5">
               <PostActions
                 postId={post.id}
@@ -85,6 +100,7 @@ export default async function PostDetailPage({
                 approvalStatus={post.approvalStatus}
                 editable={editable}
                 hasRetryable={post.platforms.some((p) => p.status === "FAILED")}
+                plannedAt={post.status !== "SCHEDULED" ? (post.scheduledAt?.toISOString() ?? null) : null}
               />
             </div>
           </Card>
@@ -96,6 +112,11 @@ export default async function PostDetailPage({
               action={<Badge tone={STATUS_TONES[p.status]}>{PLATFORM_STATUS_LABELS[p.status]}</Badge>}
             >
               <p className="whitespace-pre-wrap break-words text-sm text-slate-800">{p.content || "（内容なし）"}</p>
+              {p.mediaUrls[0] && (
+                <div className="mt-3">
+                  <MediaPreview media={{ url: p.mediaUrls[0], type: p.mediaType ?? inferMediaType(p.mediaUrls[0]) }} />
+                </div>
+              )}
               {p.errorMessage && (
                 <div className="mt-4">
                   <Alert tone={p.status === "FAILED" ? "error" : "warning"} title={p.errorMessage}>

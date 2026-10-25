@@ -105,9 +105,12 @@ test("APIキーで複数アカウントを連携し、投稿・予約まで一�
   await expect(page.getByLabel(/^X 店舗A.*の投稿内容/)).toHaveValue(/【ストーリー型】/);
   await expect(page.getByLabel(/^Threads Lounge\+.*の投稿内容/)).toHaveValue(/みなさんはどう過ごしていますか/);
   await expect(page.getByLabel(/投稿タイトル/)).toHaveValue(/週末の過ごし方/);
-  // Enter キーでは予約されない
+  // Enter キーでは予約されない（少し待っても画面が変わらないことを確認）
   await page.getByLabel("今回の目的（任意）").press("Enter");
-  await expect(page).toHaveURL(/\/posts\/new/);
+  await page.getByLabel(/投稿タイトル/).press("Enter");
+  await page.waitForTimeout(1500);
+  await expect(page).toHaveURL(/\/posts\/new$/);
+  await expect(page.getByText("投稿を予約しました", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "予約する" }).click();
   await expect(page.getByText("投稿を予約しました", { exact: true })).toBeVisible();
   await expect(page.getByText("AIが作った投稿案を採用しました").first()).toBeVisible();

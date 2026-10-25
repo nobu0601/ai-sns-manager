@@ -116,6 +116,7 @@ export async function createPost(userId: string, input: PostInput): Promise<Post
           accountName: t.accountName,
           content: t.content,
           mediaUrls: t.mediaUrls,
+          mediaType: t.mediaUrls.length > 0 ? (t.mediaType ?? null) : null,
           idempotencyKey: idempotencyKeyFor(post.id, t.socialAccountId),
         },
       });
@@ -188,7 +189,12 @@ export async function updatePost(userId: string, postId: string, input: PostInpu
     if (removed.length > 0) await tx.postPlatform.deleteMany({ where: { id: { in: removed.map((p) => p.id) } } });
 
     for (const t of targets) {
-      const fields = { content: t.content, mediaUrls: t.mediaUrls, accountName: t.accountName };
+      const fields = {
+        content: t.content,
+        mediaUrls: t.mediaUrls,
+        mediaType: t.mediaUrls.length > 0 ? (t.mediaType ?? null) : null,
+        accountName: t.accountName,
+      };
       const existing = post.platforms.find((p) => p.socialAccountId === t.socialAccountId);
       if (existing) {
         await tx.postPlatform.update({ where: { id: existing.id }, data: { ...fields, status: "DRAFT", errorMessage: null } });
@@ -284,6 +290,7 @@ async function validateForPublishing(userId: string, post: PostWithPlatforms): P
       platform: p.platform,
       content: p.content,
       mediaUrls: p.mediaUrls,
+      mediaType: p.mediaType,
       idempotencyKey: p.idempotencyKey,
     });
     errors.push(...result.errors.map((e) => e.replace(`${PLATFORM_LABELS[p.platform]}:`, `${targetLabel(p)}:`)));

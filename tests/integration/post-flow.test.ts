@@ -231,7 +231,7 @@ describe.skipIf(!hasTestDatabase)("投稿フロー（統合）", async () => {
     });
     const err = await posts.schedulePost(userId, post.id, { scheduledAt: future(), approve: true }).catch((e) => e);
     expect(err.code).toBe("VALIDATION_ERROR");
-    expect(err.details.join()).toContain("画像のURLを入力してください");
+    expect(err.details.join()).toContain("画像または動画を添付してください");
     expect(err.details.join()).toContain("280文字以内");
     expect(scheduled.size).toBe(0);
 

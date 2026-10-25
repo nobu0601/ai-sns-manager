@@ -1,4 +1,5 @@
 import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
+import { primaryMedia } from "./media";
 import { platformTextLength } from "./text-length";
 import type { PlatformPost, SocialPlatformCapabilities, ValidationResult } from "./types";
 
@@ -23,8 +24,12 @@ export function validateAgainstCapabilities(
   }
 
   if (capabilities.requiresMedia && !hasMedia) {
-    errors.push(`${name}: 画像のURLを入力してください（${name}は画像なしでは投稿できません）`);
+    errors.push(`${name}: 画像または動画を添付してください（${name}は画像・動画なしでは投稿できません）`);
   }
+  const media = primaryMedia(post);
+  if (media?.type === "VIDEO" && !capabilities.videoPost) errors.push(`${name}: 動画の投稿には対応していません`);
+  if (media?.type === "IMAGE" && !capabilities.imagePost) errors.push(`${name}: 画像の投稿には対応していません`);
+  if ((post.mediaUrls?.length ?? 0) > 1) errors.push(`${name}: 添付できる画像・動画は1つまでです`);
   for (const url of post.mediaUrls ?? []) {
     if (!/^https:\/\/\S+$/.test(url)) errors.push(`${name}: 画像のURLは https:// で始まる公開URLにしてください`);
   }

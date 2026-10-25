@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import type { ApprovalMode, Platform } from "@prisma/client";
+import type { ApprovalMode, MediaType, Platform } from "@prisma/client";
 import { Alert } from "@/components/common/Alert";
 import { btn, input, label } from "@/components/common/buttons";
 import { ApiError, apiFetch } from "@/lib/client/api";
@@ -13,6 +13,8 @@ import { draftTexts } from "@/lib/ai/quality";
 import type { PostDraft } from "@/lib/ai/types";
 import { platformTextLength } from "@/lib/social/text-length";
 import { AiDraftPanel } from "./AiDraftPanel";
+import { MediaPicker, type SelectedMedia } from "./MediaPicker";
+import { inferMediaType } from "@/lib/social/media";
 import { validateAgainstCapabilities } from "@/lib/social/validate";
 
 const PLATFORM_ORDER: Platform[] = ["X", "INSTAGRAM", "THREADS"];
@@ -25,7 +27,14 @@ export type PostFormInitial = {
   topic: string;
   brandId: string | null;
   scheduledAt: string | null;
-  targets: { socialAccountId: string | null; platform: Platform; accountName: string; content: string; mediaUrls: string[] }[];
+  targets: {
+    socialAccountId: string | null;
+    platform: Platform;
+    accountName: string;
+    content: string;
+    mediaUrls: string[];
+    mediaType: MediaType | null;
+  }[];
 };
 
 type Props = {
@@ -68,7 +77,10 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
   const [separate, setSeparate] = useState(initiallySeparate);
   const [common, setCommon] = useState(initialValues[0] ?? "");
   const [perAccount, setPerAccount] = useState<Record<string, string>>(initialContents);
-  const [imageUrl, setImageUrl] = useState(initialTargets.find((t) => t.mediaUrls.length > 0)?.mediaUrls[0] ?? "");
+  const initialMedia = initialTargets.find((t) => t.mediaUrls.length > 0);
+  const [media, setMedia] = useState<SelectedMedia | null>(
+    initialMedia ? { url: initialMedia.mediaUrls[0], type: initialMedia.mediaType ?? inferMediaType(initialMedia.mediaUrls[0]) } : null,
+  );
   const [scheduledAt, setScheduledAt] = useState(
     initial?.scheduledAt ? toLocalInput(new Date(initial.scheduledAt)) : toLocalInput(new Date(Date.now() + 60 * 60 * 1000)),
   );
@@ -82,7 +94,11 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
   const selectedAccounts = choices.filter((a) => selected.includes(a.id));
   const needsImage = selectedAccounts.some((a) => PLATFORM_CAPABILITIES[a.platform].requiresMedia);
   const contentFor = (id: string) => (separate ? (perAccount[id] ?? common) : common);
-  const mediaFor = (platform: Platform) => (PLATFORM_CAPABILITIES[platform].requiresMedia && imageUrl.trim() ? [imageUrl.trim()] : []);
+  // 添付した画像・動画を、その種類に対応している投稿先にだけ付ける
+  const supportsMedia = (platform: Platform) =>
+    media !== null && (media.type === "VIDEO" ? PLATFORM_CAPABILITIES[platform].videoPost : PLATFORM_CAPABILITIES[platform].imagePost);
+  const mediaFor = (platform: Platform) => (supportsMedia(platform) ? [media!.url] : []);
+  const mediaTypeFor = (platform: Platform) => (supportsMedia(platform) ? media!.type : null);
 
   const checks = useMemo(
     () =>
@@ -90,12 +106,12 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
         account: a,
         length: platformTextLength(contentFor(a.id), PLATFORM_CAPABILITIES[a.platform]),
         result: validateAgainstCapabilities(
-          { platform: a.platform, content: contentFor(a.id), mediaUrls: mediaFor(a.platform), idempotencyKey: "" },
+          { platform: a.platform, content: contentFor(a.id), mediaUrls: mediaFor(a.platform), mediaType: mediaTypeFor(a.platform), idempotencyKey: "" },
           PLATFORM_CAPABILITIES[a.platform],
         ),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selected, separate, common, perAccount, imageUrl],
+    [selected, separate, common, perAccount, media],
   );
 
   function toggleAccount(id: string) {
@@ -134,7 +150,12 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
       topic,
       brandId: brandId || null,
       aiGenerated: aiMeta,
-      targets: selectedAccounts.map((a) => ({ socialAccountId: a.id, content: contentFor(a.id), mediaUrls: mediaFor(a.platform) })),
+      targets: selectedAccounts.map((a) => ({
+        socialAccountId: a.id,
+        content: contentFor(a.id),
+        mediaUrls: mediaFor(a.platform),
+        mediaType: mediaTypeFor(a.platform),
+      })),
     };
     let postId = savedId;
     try {
@@ -171,9 +192,13 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
       className="space-y-6"
       onSubmit={(e) => {
         e.preventDefault();
-        // 入力欄で Enter を押しただけでは予約しない（「予約する」ボタンを押したときだけ）
-        const submitter = (e.nativeEvent as SubmitEvent).submitter;
-        if (submitter?.getAttribute("type") === "submit") submit("schedule");
+        submit("schedule");
+      }}
+      // 入力欄で Enter を押しただけでは予約しない（ブラウザは Enter で最初の送信ボタン＝「予約する」を押した扱いにするため、ここで止める）
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && e.target instanceof HTMLInputElement && e.target.type !== "checkbox" && e.target.type !== "radio") {
+          e.preventDefault();
+        }
       }}
     >
       {error && <Alert title={error.message} messages={error.details} />}
@@ -274,20 +299,7 @@ export function PostForm({ initial, brands, approvalMode, accounts }: Props) {
           ))
         )}
 
-        {needsImage && (
-          <div>
-            <label className={label} htmlFor="imageUrl">画像のURL（Instagram は必須）</label>
-            <input
-              id="imageUrl"
-              type="url"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="https://example.com/photo.jpg"
-              className={input}
-            />
-            <p className="mt-1 text-xs text-slate-500">インターネットから見られる https:// の画像URLを入力してください（JPEG推奨）。</p>
-          </div>
-        )}
+        {selectedAccounts.length > 0 && <MediaPicker value={media} onChange={setMedia} brandId={brandId} required={needsImage} />}
 
         <ul className="space-y-1 text-xs">
           {checks.map((c) => {

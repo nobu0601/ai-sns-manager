@@ -71,6 +71,35 @@ enum PostLogEvent {
   RETRY
 }
 
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum MediaProvider {
+  FAL_AI
+  MOCK
+}
+
+enum MediaStatus {
+  PENDING
+  GENERATING
+  READY
+  FAILED
+}
+
+enum AgentRunTrigger {
+  MANUAL
+  SCHEDULED
+}
+
+enum AgentRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 enum LogStatus {
   INFO
   SUCCESS
@@ -91,6 +120,9 @@ model User {
   brands         Brand[]
   socialAccounts SocialAccount[]
   posts          Post[]
+  media          Media[]
+  agentConfigs   AgentConfig[]
+  agentRuns      AgentRun[]
 }
 
 model Brand {
@@ -114,6 +146,8 @@ model Brand {
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   posts          Post[]
   socialAccounts SocialAccount[]
+  agentConfig    AgentConfig?
+  agentRuns      AgentRun[]
 
   @@index([userId])
 }
@@ -161,12 +195,17 @@ model Post {
   scheduledAt    DateTime?
   // AI が作った案を採用した投稿か（承認モード「AI生成後のみ承認」の判定とログに使う）
   aiGenerated    Boolean        @default(false)
+  // AI Agent が作った投稿の場合、その実行と、割り当てた投稿テーマの柱
+  agentRunId     String?
+  contentPillar  String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   brand     Brand?         @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  agentRun  AgentRun?      @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
   platforms PostPlatform[]
+  media     Media[]
 
   @@index([userId, status])
   @@index([userId, scheduledAt])
@@ -182,8 +221,9 @@ model PostPlatform {
   // 投稿時点のアカウント名（切断後も履歴で表示するため）
   accountName     String             @default("")
   content         String
-  // 添付する画像のURL（Instagram は必須）
+  // 添付する画像・動画のURL（Instagram は必須）と、その種類
   mediaUrls       String[]           @default([])
+  mediaType       MediaType?
   status          PostPlatformStatus @default(DRAFT)
   // 二重投稿防止キー（postId:socialAccountId）
   idempotencyKey  String             @unique
@@ -216,4 +256,76 @@ model PostLog {
   postPlatform PostPlatform @relation(fields: [postPlatformId], references: [id], onDelete: Cascade)
 
   @@index([postPlatformId, createdAt])
+}
+
+// 生成した画像・動画（fal.ai などで作成）。URL は生成サービスの公開URLをそのまま使う
+model Media {
+  id           String        @id @default(cuid())
+  userId       String
+  postId       String?
+  type         MediaType
+  provider     MediaProvider
+  // ユーザーが入力したイメージ（日本語）と、AI が作った生成用プロンプト
+  idea         String
+  prompt       String        @default("")
+  // 動画の構成（場面ごとの説明）。画像では空
+  script       String        @default("")
+  aspectRatio  String        @default("1:1")
+  model        String        @default("")
+  url          String?
+  status       MediaStatus   @default(PENDING)
+  errorMessage String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post? @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+}
+
+// ブランドごとの AI Agent 設定（投稿頻度・曜日・時間帯・毎週の自動実行）
+model AgentConfig {
+  id                String   @id @default(cuid())
+  userId            String
+  brandId           String   @unique
+  // 毎週の自動実行
+  weeklyEnabled     Boolean  @default(false)
+  runWeekday        Int      @default(1) // 0=日 … 6=土（日本時間）
+  runTime           String   @default("09:00")
+  // 投稿の計画
+  postsPerWeek      Int      @default(3)
+  preferredWeekdays Int[]    @default([1, 3, 5])
+  preferredTime     String   @default("12:00")
+  targetAccountIds  String[] @default([])
+  generateImages    Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+}
+
+// AI Agent の実行記録
+model AgentRun {
+  id           String          @id @default(cuid())
+  userId       String
+  brandId      String
+  trigger      AgentRunTrigger
+  status       AgentRunStatus  @default(QUEUED)
+  // 計画の対象期間
+  periodStart  DateTime?
+  periodEnd    DateTime?
+  // AI が決めた計画（テーマ・型・理由）と、結果の説明
+  plan         Json?
+  summary      String?
+  errorMessage String?
+  createdAt    DateTime        @default(now())
+  finishedAt   DateTime?
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  posts Post[]
+
+  @@index([userId, createdAt])
 }

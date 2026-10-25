@@ -17,3 +17,23 @@ export const draftSchema = z.object({
 
 export const draftSetSchema = z.object({ drafts: z.array(draftSchema) });
 export type DraftSet = z.infer<typeof draftSetSchema>;
+
+// 画像・動画の生成プロンプト
+export const mediaPromptSchema = z.object({
+  prompt: z.string().describe("画像・動画生成AIに渡す英語のプロンプト"),
+  script: z.string().describe("動画の場合は日本語の構成メモ。画像の場合は空文字"),
+});
+
+// AI Agent の投稿計画
+export const planSchema = z.object({
+  items: z.array(
+    z.object({
+      slotIndex: z.number().int(),
+      pillar: z.string(),
+      topic: z.string(),
+      style: z.enum(DRAFT_STYLES),
+      reason: z.string(),
+      imageIdea: z.string(),
+    }),
+  ),
+});
