@@ -121,6 +121,66 @@ User / Post / SocialAccount などのモデルを永続化。
 5. Max 3 回まで自動リトライ（30s → 2min 間隔）
 ```
 
+## AI 投稿生成
+
+テーマとブランド情報から X / Instagram / Threads 向けの投稿案を作る。案は DB に保存せず、採用した時点で通常の投稿（`Post.aiGenerated = true`）として保存する。
+
+```
+lib/ai/
+  ai-service.ts      ← generateDrafts(): 生成・品質チェック・作り直し
+  registry.ts        ← getAIProvider(): Claude / Mock の選択
+  claude-provider.ts / mock-provider.ts
+  schema.ts          ← 構造化出力用の zod スキーマ（draftSetSchema）
+  prompts.ts         ← prompts/ の読み込みと、ユーザー入力のプロンプト組み立て
+  quality.ts         ← checkDraft() / findDuplicates()
+  types.ts / errors.ts
+```
+
+### Provider
+
+```typescript
+interface AIProvider {
+  readonly name: string;
+  generate(request: GenerateRequest): Promise<GenerateResult>;
+}
+```
+
+- **ClaudeProvider** (`claude`): `client.beta.messages.parse()` に `betaZodOutputFormat(draftSetSchema)` を渡し、JSON を構造化出力で受け取る
+  - モデル: `ANTHROPIC_MODEL`（未設定なら `claude-sonnet-5-5`）
+  - 思考の深さ: `ANTHROPIC_EFFORT`（未設定なら `medium`）→ `output_config.effort`
+  - `fallbacks: "default"` と beta `server-side-fallback-2026-07-01` でサーバー側フォールバックを有効化
+  - `max_tokens` は 16000。SDK の再試行は `maxRetries: 2`
+  - 件数や文字数はスキーマでは縛らず、受け取った後に品質チェックで確認する
+- **MockAIProvider** (`mock`): AI を呼ばず決まった案を返す。テーマに `#mock-prohibited` を含めると禁止ワード入りの案を返す（品質チェックの確認用）
+
+### Registry
+
+`AI_PROVIDER_MODE`（`claude` / `mock`）で選ぶ。未指定なら、`ANTHROPIC_API_KEY` があれば `claude`、なければ `mock`。
+
+### プロンプト
+
+`prompts/post-generation/system.md` と `prompts/{x,instagram,threads}/guidelines.md` を連結し、初回に読み込んでキャッシュする。`process.cwd()` 基準で読むため、リポジトリのルートで起動する前提。テーマやブランド情報はユーザーメッセージとして別に渡す。
+
+### 品質チェックと作り直し
+
+`generateDrafts()` の流れ:
+
+1. 依頼された型（既定は5型）で Provider を呼ぶ。依頼した型に合わない案は捨て、残りを型の順に並べる
+2. `checkDraft()` が各 SNS の文章を確認する
+   - errors（作り直し対象）: 空の文章、文字数超過、禁止キーワード、Instagram のハッシュタグ30個超
+   - warnings（表示のみ）: URL を含む、ハッシュタグが目安を超える
+3. `findDuplicates()`: X の文章が他の案と同じなら errors
+4. errors のある案だけ、問題点を `feedback` として渡して作り直す。作り直しは最大 `MAX_REGENERATIONS`（2）回（呼び出しは最大3回）
+5. 作り直しても直らなかった問題は `errors` に残して返す
+
+文字数: X は `xWeightedLength()`（`lib/social/text-length.ts`）で数える。U+0000〜U+10FF など一部の範囲は1、それ以外（日本語・絵文字など）は2、URL は一律23として数え、上限280と比べる。他の SNS はコードポイント数で数える。
+
+### 保存と承認
+
+- 案は保存しない。`POST /api/ai/drafts` は結果を返すだけ
+- 投稿フォームが採用した案を `POST /api/posts` に `aiGenerated: { model, style }` 付きで送ると、`Post.aiGenerated = true` と `AI_GENERATED` ログが残る
+- 承認モード `AI_ONLY` では AI 由来の投稿が承認待ちになる（`initialApprovalStatus()`）
+
 ## Adapter パターン
 
 各 SNS は `SocialPlatformAdapter` を実装。API キー（または OAuth 1.0a トークン）で認証。

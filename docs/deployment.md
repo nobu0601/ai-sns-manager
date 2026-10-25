@@ -24,7 +24,7 @@ AI SNS Manager の本番運用には次の 4 つが必要です。
 | `AUTH_TRUST_HOST` | リバースプロキシ配下（Render / Railway 等）では `true` |
 | `ENCRYPTION_KEY` | `openssl rand -base64 32` で生成。**運用開始後に変更しない**（保存済みの SNS APIキーが復号できなくなる） |
 | `SOCIAL_PROVIDER_MODE` | `live` で実際に投稿する（`mock` は投稿しない）。SNS の APIキーは画面から登録する |
-| `ANTHROPIC_API_KEY` | Claude の APIキー（AI 投稿生成・Phase 2 で使用） |
+| `ANTHROPIC_API_KEY` | Claude の APIキー（AI 投稿生成で使用。未設定なら AI は Mock で動作） |
 
 Web と Worker には**同じ値**を設定してください（特に `DATABASE_URL`、`REDIS_URL`、`ENCRYPTION_KEY`、`SOCIAL_PROVIDER_MODE`）。
 

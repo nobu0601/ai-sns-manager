@@ -29,7 +29,7 @@
 - `404 Not Found`: リソース未検出
 - `409 Conflict`: 状態遷移エラー (例: 投稿中は編集不可)
 - `500 Internal Server Error`: サーバーエラー (code: `INTERNAL_ERROR`)
-- `501 Not Implemented`: 未実装機能 (Phase 2/3)
+- `501 Not Implemented`: 未実装機能（画像・動画生成。Phase 3）
 
 ---
 
@@ -140,6 +140,8 @@
 }
 ```
 
+`aiGenerated`（任意）は、`POST /api/ai/drafts` の案を採用したときに `{ "model": "claude-sonnet-5-5", "style": "howto" }` を渡す（`model` 100字以内、`style` 50字以内。型の列挙は検証しない）。指定すると `Post.aiGenerated = true` になり、作成時に `AI_GENERATED` の PostLog（metadata に model / style）が残る。省略・`null` は手動作成。承認モードが `AI_ONLY` のとき、AI 由来の投稿は承認待ち（PENDING）になる。
+
 **Response (201):**
 ```json
 {
@@ -191,6 +193,8 @@
   ]
 }
 ```
+
+`aiGenerated` も POST と同じ形式で指定できる。一度 `true` になった投稿は PATCH で `false` に戻らない。`AI_GENERATED` のログは作成時のみ残り、PATCH では追加されない。
 
 **Response (200):**
 ```json
@@ -274,15 +278,81 @@
 
 ### POST /api/posts/{id}/publish
 
-即座に投稿（Worker が処理）。Phase 2。
+今すぐ投稿する。Web リクエスト内では投稿せず、即時実行のジョブとしてキューに登録する（実際の投稿は Worker が行う）。中身は `scheduledAt` を現在時刻にした予約と同じ。
 
-**Response (501):** Not Implemented
+**Request（任意）:**
+```json
+{ "approve": true }
+```
+`approve: true` を付けると、承認待ちの投稿を作成者の承認として扱ってから登録する。
+
+**Response (200):**
+```json
+{
+  "post": { /* 予約済み（すぐ実行される）投稿オブジェクト */ }
+}
+```
+
+エラーは予約（`/schedule`）と同じ（`APPROVAL_REQUIRED`、`VALIDATION_ERROR` など）。
 
 ### POST /api/posts/{id}/generate
 
-AI で投稿内容を生成。Phase 2。
+既存の投稿の `topic`（なければ `title`）と `brandId` で投稿案を作る。投稿自体は変更しない。他人の投稿は 404。
 
-**Response (501):** Not Implemented
+**Request（任意）:** `POST /api/ai/drafts` と同じ項目。指定すると既存値より優先する（body 省略可。不正な JSON は無視）。
+
+**Response (200):** `POST /api/ai/drafts` と同じ（`drafts` / `model` / `provider`）。
+
+---
+
+## AI API
+
+### POST /api/ai/drafts
+
+テーマとブランドから投稿案を作る。**案は保存しない**。採用する案は `POST /api/posts` に `aiGenerated` を付けて保存する。
+
+**Request:**
+```json
+{
+  "topic": "新メニューの紹介",
+  "objective": "来店促進",
+  "brandId": "brand123",
+  "styles": ["brand_intro", "empathy"]
+}
+```
+
+- `topic`: 1000字以内。省略時は空（ブランドの投稿テーマの柱から選ばれる）
+- `objective`: 500字以内（任意）
+- `brandId`: 任意。自分のブランドのみ（他人のブランドは 404）
+- `styles`: `brand_intro` / `empathy` / `story` / `howto` / `question` から最大5件。省略・空配列なら5型すべて
+
+**Response (200):**
+```json
+{
+  "drafts": [
+    {
+      "id": "uuid",
+      "style": "empathy",
+      "title": "...",
+      "summary": "...",
+      "x": { "text": "..." },
+      "instagram": { "caption": "...", "hashtags": ["#..."] },
+      "threads": { "text": "..." },
+      "errors": [],
+      "warnings": ["Xの文章にURLが含まれています。..."]
+    }
+  ],
+  "model": "claude-sonnet-5-5",
+  "provider": "claude"
+}
+```
+
+- `drafts`: 依頼した型の順。`PostDraft`（`style` / `title` / `summary` / `x` / `instagram` / `threads`）に `id` / `errors` / `warnings` を加えた `CheckedDraft`
+- `errors`: 作り直しても直らなかった問題（禁止キーワード、文字数超過など）。保存時には検証されず、予約・投稿時の投稿前チェックで確認される
+- `warnings`: 注意のみ（URL、ハッシュタグの多さなど）
+- `provider`: `claude` または `mock`（mock のときの `model` は `"mock"`）
+
+AI のエラーは `AI_*` コード（下の一覧）で返す。
 
 ---
 
@@ -527,7 +597,7 @@ SNS アカウント切断。
 
 ---
 
-## メディア生成 API（Phase 2）
+## メディア生成 API（Phase 3）
 
 ### POST /api/media/generate
 
@@ -550,3 +620,9 @@ SNS アカウント切断。
 | NOT_FOUND | リソース未検出 | 404 |
 | INTERNAL_ERROR | サーバーエラー | 500 |
 | NOT_IMPLEMENTED | 未実装 | 501 |
+| AI_NOT_CONFIGURED | AI の APIキーが未設定 | 503 |
+| AI_AUTH | AI の APIキーが不正、または権限なし | 502 |
+| AI_RATE_LIMIT | AI のレート制限 | 429 |
+| AI_REFUSAL | モデルが内容を断った | 422 |
+| AI_INVALID_OUTPUT | 出力が形式どおりにならない・途中で打ち切り・リクエスト不正・案が1つも作れなかった | 502 |
+| AI_UNAVAILABLE | AI に接続できない（通信エラー・5xx など） | 503 |

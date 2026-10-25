@@ -28,7 +28,7 @@ X, INSTAGRAM, THREADS
 
 ```
 DRAFT       # 下書き
-GENERATING  # AI 生成中（Phase 2）
+GENERATING  # 未使用（現在どの処理も設定しない）
 READY       # 完成・承認待ち
 SCHEDULED   # 予約済み
 POSTING     # 投稿処理中
@@ -88,7 +88,7 @@ DISCONNECTED # 切断済み
 ```
 POST_CREATED    # 投稿作成
 POST_UPDATED    # 投稿編集
-AI_GENERATED    # AI 生成完了
+AI_GENERATED    # AI 生成案の採用（作成時）
 APPROVED        # 承認
 REJECTED        # 却下
 SCHEDULED       # 予約
@@ -221,6 +221,7 @@ SNS アカウント。API キー類は暗号化。パスワード・秘密情報
 | status | PostStatus | 集計状態。デフォルト: DRAFT |
 | approvalStatus | ApprovalStatus | 承認状態。デフォルト: PENDING |
 | scheduledAt | DateTime? | 予約日時 |
+| aiGenerated | Boolean | AI が作った案を採用した投稿か。デフォルト: false |
 | createdAt | DateTime | 作成日時 |
 | updatedAt | DateTime | 更新日時 |
 
@@ -232,6 +233,9 @@ SNS アカウント。API キー類は暗号化。パスワード・秘密情報
 **Indexes:**
 - `(userId, status)`
 - `(userId, scheduledAt)`
+
+**aiGenerated のマイグレーション:** `prisma/migrations/20261025010000_post_ai_generated`。`ALTER TABLE "Post" ADD COLUMN "aiGenerated" BOOLEAN NOT NULL DEFAULT false;` で追加する。既存の投稿は `false` になる。
+一度 `true` になった値は PATCH で `false` に戻らない（`updatePost()` は `post.aiGenerated || input.aiGenerated` で更新）。
 
 ---
 
@@ -291,6 +295,8 @@ SNS アカウント別の投稿内容・状態。同じ Post を複数アカウ�
 
 **Indexes:**
 - `(postPlatformId, createdAt)`
+
+**AI_GENERATED の記録:** `POST /api/posts` で `aiGenerated` 付きの投稿を作成したとき、投稿の PostPlatform ごとに1件ずつ `event = AI_GENERATED`、`status = INFO`、`message = "AIが作った投稿案を採用しました"`、`metadata = { model, style }` を残す（`POST_CREATED` と同じトランザクション）。PATCH では記録しない。
 
 ---
 
@@ -423,13 +429,10 @@ npm run db:studio
 
 ## 今後の拡張
 
-### Phase 2 で追加予想
+### Phase 3 で追加予定
 
-- Media モデル（生成画像・ビデオ）
-- AIGenerationJob モデル（生成タスク追跡）
-- Analytics モデル（投稿成績）
+- Media モデル（生成した画像・動画。投稿への添付）
 
-### Phase 3 で追加予想
+### Phase 4 で追加予定
 
-- Comment / Like モデル（コミュニティ機能）
-- Hashtag / ContentTag モデル（タグ管理）
+- 分析用のモデル（SNS から取得できる範囲の投稿成績）
