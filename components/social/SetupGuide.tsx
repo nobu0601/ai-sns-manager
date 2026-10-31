@@ -65,7 +65,7 @@ export function SetupGuide({ platform, open = false }: { platform: Platform; ope
   return (
     <details className="mb-4 rounded-lg border border-sky-200 bg-sky-50/60 p-3" open={open}>
       <summary className="cursor-pointer text-sm font-semibold text-sky-900">
-        はじめての方へ：{name}のキーの取得方法（画面のイメージ図つき）
+        はじめての方へ：{name}のキーの取得方法（画面つき）
       </summary>
       <div className="mt-3 space-y-4 text-sm text-slate-700">
         <p>{guide.summary}</p>
@@ -88,7 +88,22 @@ export function SetupGuide({ platform, open = false }: { platform: Platform; ope
                     {line}
                   </p>
                 ))}
-                {step.screen && <ScreenSketch screen={step.screen} />}
+                {step.images?.length ? (
+                  <div className="mt-2 space-y-3">
+                    {step.images.map((img) => (
+                      <figure key={img.src} className="max-w-3xl">
+                        <a href={img.src} target="_blank" rel="noreferrer" title="クリックで大きく表示">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img.src} alt={img.alt} loading="lazy" className="w-full rounded-lg border border-slate-300 shadow-sm" />
+                        </a>
+                        <figcaption className="mt-1 text-xs text-slate-500">{img.alt}</figcaption>
+                      </figure>
+                    ))}
+                    <p className="text-[11px] text-slate-400">実際の画面です（2026年10月時点。個人情報はぼかしています）。画像を押すと大きく表示されます</p>
+                  </div>
+                ) : (
+                  step.screen && <ScreenSketch screen={step.screen} />
+                )}
               </div>
             </li>
           ))}

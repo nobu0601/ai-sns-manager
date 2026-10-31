@@ -13,9 +13,17 @@ export interface ScreenMock {
   rows: { label: string; action?: string; highlight?: boolean; note?: string }[];
 }
 
+// 実際の画面のスクリーンショット（public/guides/ 以下。個人情報はぼかし、押す場所に赤枠を付けたもの）
+export interface GuideImage {
+  src: string;
+  alt: string;
+}
+
 export interface GuideStep {
   title: string;
   body: string[];
+  // 実際の画面があればそれを表示し、無ければイメージ図を表示する
+  images?: GuideImage[];
   screen?: ScreenMock;
 }
 
@@ -30,33 +38,41 @@ export interface SetupGuide {
 export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
   THREADS: {
     summary: "Meta の開発者サイトでアプリを作り、自分の Threads アカウントで「アクセストークン」を発行します（約15分・無料）。",
-    before: ["Threads のアカウント（Instagram のアカウントで作ったもの）", "パソコンのブラウザ（作業は Meta の開発者サイトで行います）"],
+    before: [
+      "Threads のアカウント（Instagram のアカウントで作ったもの）",
+      "Threads のアカウントが公開になっていること（トークンは公開アカウントでのみ発行できます）",
+      "パソコンのブラウザ（作業は Meta の開発者サイトで行います）",
+    ],
     steps: [
       {
         title: "Meta の開発者サイトでアプリを作る",
         body: [
           "https://developers.facebook.com/apps を開き、Facebook のアカウントでログインします（初めての場合は開発者登録の案内が出るので、画面に沿って進めます）。",
-          "右上の「アプリを作成」を押します。",
-          "ユースケースで「Threads API にアクセス」を選び、アプリ名（例：Lounge+ SNS）を入れて作成します。",
+          "① 右上の「アプリを作成」を押します。",
+          "② 「アプリ名」に好きな名前（例：Lounge+ SNS）を入れて「次へ」。連絡先メールアドレスは最初から入っています。",
+          "③ ユースケースで「Threads APIにアクセス」にチェックを入れて「次へ」。",
+          "④ ビジネスは「現時点ではビジネスポートフォリオをリンクしない。」を選んで⑤「次へ」。",
+          "⑥ 要件の画面は「次へ」。最後の概要の画面で作成を確定します。",
         ],
-        screen: {
-          kind: "browser",
-          site: "developers.facebook.com/apps",
-          heading: "マイアプリ",
-          rows: [{ label: "（まだアプリがありません）" }, { label: "", action: "アプリを作成", highlight: true }],
-        },
+        images: [
+          { src: "/guides/threads/01-apps.webp", alt: "アプリの一覧。右上の「アプリを作成」を押す" },
+          { src: "/guides/threads/02-details.webp", alt: "アプリの詳細。アプリ名を入力して「次へ」" },
+          { src: "/guides/threads/03-usecase.webp", alt: "ユースケース。「Threads APIにアクセス」にチェック" },
+          { src: "/guides/threads/04-business.webp", alt: "ビジネス。「現時点ではビジネスポートフォリオをリンクしない。」を選んで「次へ」" },
+          { src: "/guides/threads/05-requirements.webp", alt: "要件。「次へ」を押す" },
+        ],
       },
       {
         title: "投稿と分析の権限を追加する",
         body: [
-          "左メニューの「ユースケース」を開き、「Threads API にアクセス」の「カスタマイズ」を押します。",
+          "左メニューの「ユースケース」を開き、「Threads APIにアクセス」の「カスタマイズ」を押します。",
           "「権限」の一覧で、次の3つの「追加」を押します：threads_basic（基本）、threads_content_publish（投稿）、threads_manage_insights（分析の数値）。",
         ],
         screen: {
           kind: "browser",
           site: "developers.facebook.com",
           sidebar: [{ label: "ダッシュボード" }, { label: "ユースケース", active: true }, { label: "アプリの役割" }, { label: "アプリの設定" }],
-          heading: "Threads API にアクセス ＞ 権限",
+          heading: "Threads APIにアクセス ＞ 権限",
           rows: [
             { label: "threads_basic", action: "追加", highlight: true },
             { label: "threads_content_publish", action: "追加", highlight: true },
@@ -103,15 +119,16 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
       {
         title: "アクセストークンを発行してコピーする",
         body: [
-          "開発者サイトに戻り、「ユースケース」→「Threads API にアクセス」→「設定」を開いて、一番下までスクロールします。",
+          "開発者サイトに戻り、「ユースケース」→「Threads APIにアクセス」→「設定」を開いて、一番下までスクロールします。",
           "「ユーザートークン生成ツール」に自分のアカウントが表示されるので、「アクセストークンを生成」を押します。",
-          "Threads の許可画面で「許可」を押すと、長い英数字のトークンが表示されます。全部コピーします。",
+          "Threads の許可画面で「許可」を押すと、長い英数字のトークン（長期間アクセストークン）が表示されます。全部コピーします。",
+          "自分のアカウントが出てこないときは、同じ欄の「Threadsテスターを追加または削除」からテスターに追加し、手順4の承認を済ませてください。",
         ],
         screen: {
           kind: "browser",
           site: "developers.facebook.com",
           sidebar: [{ label: "ダッシュボード" }, { label: "ユースケース", active: true }, { label: "アプリの役割" }, { label: "アプリの設定" }],
-          heading: "Threads API にアクセス ＞ 設定（一番下）",
+          heading: "Threads APIにアクセス ＞ 設定（一番下）",
           rows: [
             { label: "ユーザートークン生成ツール" },
             { label: "@あなたのアカウント", action: "アクセストークンを生成", highlight: true },
@@ -124,8 +141,7 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
       },
     ],
     after: [
-      "トークンには有効期限があります（多くの場合60日）。「接続が切れています」と出たら、手順5でもう一度発行し、「キーを更新」で入れ直してください。",
-      "「ユーザートークン生成ツール」は Meta の公式ドキュメントには載っていない画面です（利用者向けの解説記事で確認）。見つからないときは画面の文言を管理者に伝えてください。",
+      "ここで発行されるのは長期間アクセストークンです（画面の説明より。Meta の公式ドキュメントでは長期トークンは60日有効）。「接続が切れています」と出たら、手順5でもう一度発行し、「キーを更新」で入れ直してください。",
     ],
     sources: [
       { label: "Meta 公式：Threads API Get started", url: "https://developers.facebook.com/docs/threads/get-started" },
