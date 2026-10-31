@@ -66,8 +66,11 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
         title: "投稿と分析の権限を追加する",
         body: [
           "左メニューの「ユースケース」を開き、「Threads APIにアクセス」の「カスタマイズ」を押します。",
-          "「権限」の一覧で、次の3つの「追加」を押します：threads_basic（基本）、threads_content_publish（投稿）、threads_manage_insights（分析の数値）。",
+          "① 左の「アクセス許可と機能」を開きます。",
+          "次の3つを使えるようにします：threads_basic（基本）、threads_content_publish（投稿）、threads_manage_insights（分析の数値）。",
+          "② ステータスが「テスト準備完了」になっているものは追加済みです。③ まだのものは右の「追加」を押します。",
         ],
+        images: [{ src: "/guides/threads/02-permissions.webp", alt: "「アクセス許可と機能」の一覧。ステータスが「テスト準備完了」なら追加済み。まだのものは「追加」を押す" }],
         screen: {
           kind: "browser",
           site: "developers.facebook.com",
@@ -88,6 +91,7 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
           "「アプリに人を追加」の画面で、下の「このアプリの追加の役割」にある「Threadsテスター」を選びます。",
           "下の入力欄に自分の Threads のユーザーネーム（@ の後ろ）を入れて、「追加」を押します。",
         ],
+        images: [{ src: "/guides/threads/03-tester.webp", alt: "「アプリに人を追加」の画面。「Threadsテスター」を選び、ユーザーネームを入れて「追加」" }],
         screen: {
           kind: "browser",
           site: "developers.facebook.com",
@@ -108,6 +112,7 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
           "承認すると「アクティブ」タブにアプリ名が表示されます。",
           "あわせて「プライバシー」→「非公開プロフィール」が「公開」になっていることも確認してください（非公開だとトークンを発行できません）。",
         ],
+        images: [{ src: "/guides/threads/04-invite.webp", alt: "Threads の設定 →「その他の設定」→「ウェブサイトのアクセス許可」の「招待」タブ" }],
         screen: {
           kind: "phone",
           site: "threads.com/settings",
@@ -174,6 +179,12 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
           "左メニューの「アプリの役割」→「役割」を開き、右上の「メンバーを追加」を押します。",
           "「アプリに人を追加」の画面で「Instagramテスター」を選び、入力欄に自分の Instagram のユーザーネームを入れて「追加」を押します。",
           "Instagram の「アプリとウェブサイト」の設定画面に届く招待を承認します。",
+        ],
+        images: [
+          {
+            src: "/guides/instagram/02-tester.webp",
+            alt: "「アプリに人を追加」の画面。「Instagramテスター」を選び、ユーザーネームを入れて「追加」（画面の例では Threadsテスターが選ばれていますが、Instagram の場合は Instagramテスターを選びます）",
+          },
         ],
       },
       {
