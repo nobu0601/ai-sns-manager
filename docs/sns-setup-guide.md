@@ -113,9 +113,12 @@ Threads と同じ Meta のアプリに Instagram のユースケースを追加�
 
 - 左メニューの「ユースケース」→ Instagram のユースケースの「カスタマイズ」→ ①「アクセス許可と機能」を開きます。
 - 一覧を下にスクロールし、次の3つのステータスが ②「テスト準備完了」になっているか確認します：instagram_business_basic（基本）、instagram_business_content_publish（投稿）、instagram_business_manage_insights（分析の数値）。
-- ③ まだのものは右の「追加」を押します。
+- ③ まだのものは右の「追加」を押します。特に instagram_business_content_publish が無いと、連携はできても投稿が失敗します。
+- 権限を追加する前にトークンを作っていた場合は、追加したあとに手順4でトークンを作り直し、このアプリの「キーを更新」で入れ直してください。
 
 ![Instagram API の「アクセス許可と機能」。必要な権限が「テスト準備完了」なら追加済み、無ければ「追加」](../public/guides/instagram/03-permissions.webp)
+
+![スクロールした先の一覧。この例では instagram_business_basic と instagram_business_manage_insights は追加済み、instagram_business_content_publish はまだ（「追加」を押す）](../public/guides/instagram/03b-permissions.webp)
 
 ### 4. アカウントを追加して、トークンを生成する
 
