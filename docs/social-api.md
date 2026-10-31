@@ -58,6 +58,10 @@ MOCK_TRANSIENT_FAILURE_RATE=0.3  # 30% の確率で一時失敗
 
 リトライ動作の検証に使用。
 
+### Mock の TikTok
+
+TikTok の「TikTokでログインして連携」（`GET /api/social/tiktok/authorize`）は、TikTok を呼ばずに架空のアカウントを作る。
+
 ### Mock の分析用の数値
 
 `fetchPostMetrics()` / `fetchFollowerCount()` は、投稿ごとに決まった擬似の数値を返す。返す項目は実際の API と同じ（Threads の保存は `null`、リーチは Instagram のみ）。キーに `nometrics` を含めると、分析で「権限がない」場合の動作を再現できる。
@@ -77,6 +81,7 @@ MOCK_TRANSIENT_FAILURE_RATE=0.3  # 30% の確率で一時失敗
 - **Step 11**: X API v2（OAuth 1.0a）
 - **Step 12**: Instagram Graph API（アクセストークン）
 - **Step 13**: Threads API（アクセストークン）
+- **TikTok**: Content Posting API（OAuth 2.0。動画のみ。`lib/social/tiktok/tiktok-adapter.ts`）
 
 ### 各アダプターで使用される API
 
@@ -107,6 +112,22 @@ MOCK_TRANSIENT_FAILURE_RATE=0.3  # 30% の確率で一時失敗
 - `POST {ig-user-id}/media_publish` - 投稿確定
 - `GET {id}?fields=permalink` - 投稿 URL 取得
 
+#### TikTok Adapter (`lib/social/tiktok/tiktok-adapter.ts`)
+
+参考: TikTok 公式ドキュメント（Content Posting API・Direct Post）
+
+- `POST /v2/post/publish/creator_info/query/` - 投稿できる公開範囲の確認
+- 動画をダウンロード
+- `POST /v2/post/publish/video/init/`（`source` = `FILE_UPLOAD`） - 投稿の開始
+- `PUT {upload_url}`（`Content-Range`） - 動画のアップロード（5MB 未満は 1 回。それ以上は 10MB ずつ送り、残りは最後のチャンクに入れる）
+- `POST /v2/post/publish/status/fetch/` - `PUBLISH_COMPLETE` か `FAILED` になるまで確認
+
+- `externalPostId` は `publicaly_available_post_id` の先頭。無ければ `publish_id`。投稿の URL は保存しない（TikTok の資料に定義がないため）
+- 未審査のアプリは非公開（`SELF_ONLY`）でしか投稿できない。公開範囲は `TIKTOK_PRIVACY_LEVEL`（空なら `SELF_ONLY`。審査後に `PUBLIC_TO_EVERYONE`。TikTok が選べない値のときは `SELF_ONLY` にフォールバック）
+- サンドボックスでは審査なしで自分のアカウント最大 10 件まで試せるが、公開投稿はできない
+- トークンの扱い・OAuth の流れは [アーキテクチャ](architecture.md) の「TikTok の OAuth 連携」を参照
+- 本物のアカウント・アプリでは未確認
+
 ### 分析（数値の取得）
 
 Adapter の `fetchPostMetrics()`（投稿の数値）と `fetchFollowerCount()`（フォロワー数）で取得する。どちらも `callApi`（`lib/social/http.ts`）を通す。SNS が返さない指標は `null`（0 にしない）。呼び出しは Worker だけが行う（`docs/architecture.md` の「分析」）。
@@ -115,6 +136,7 @@ Adapter の `fetchPostMetrics()`（投稿の数値）と `fetchFollowerCount()`�
 |-----|-----------|-------------|-----------|
 | X（`x/x-adapter.ts`） | `GET /2/tweets?ids=…&post.fields=public_metrics`（1 回で最大 100 件）。表示 = `impression_count`、いいね = `like_count`、コメント = `reply_count`、シェア = `repost_count` + `quote_count`、保存 = `bookmark_count` | `GET /2/users/me?user.fields=public_metrics` の `followers_count` | API プランによっては使えない（HTTP 402 / 403 は「X の現在の API プランでは…」と表示） |
 | Threads（`threads/threads-adapter.ts`） | `GET {id}/insights?metric=views,likes,replies,reposts,quotes,shares`。表示 = `views`、コメント = `replies`、シェア = `reposts` + `quotes` + `shares`。保存は取得しない | `GET me/threads_insights?metric=followers_count` | `threads_manage_insights` |
+| TikTok（`tiktok/tiktok-adapter.ts`） | 取得しない（`analytics = false` のため `collectMetrics` が飛ばす） | 取得しない | - |
 | Instagram（`instagram/instagram-adapter.ts`） | `GET {media-id}/insights?metric=views,reach,likes,comments,shares,saved`。保存 = `saved` | `GET me?fields=followers_count` | `instagram_business_manage_insights`（フォロワー数は `instagram_business_basic` も必要） |
 
 - リーチは Instagram のみ。X と Threads は `null`
@@ -132,6 +154,7 @@ Adapter の `fetchRecentPosts(credentials, account, limit)` が返す（型は `
 | X | 読まない（空を返す） | 読み取りに料金がかかるため |
 | Threads（`threads/threads-adapter.ts`） | `GET me/threads?fields=id,text,timestamp,permalink&limit=…` | 本文のない投稿は飛ばす。Meta 公式サンプル（github.com/fbsamples/threads_api、ルート `/threads`）で確認 |
 | Instagram（`instagram/instagram-adapter.ts`） | `GET me/media?fields=id,caption,timestamp,permalink&limit=…` | 公式の IG Media のリファレンスでは、caption は Facebook ログインの Instagram API でのみ取得できるとされている。取得できない（エラーまたは空）場合は、エラーにせず Instagram を飛ばす。本物のアカウントでは未確認 |
+| TikTok | 読まない（空を返す） | - |
 
 ### 環境変数
 
@@ -142,7 +165,15 @@ THREADS_API_VERSION=
 INSTAGRAM_API_VERSION=
 ```
 
-API キーの設定：ユーザーが UI からアカウント登録時に入力（環境変数不要）
+TikTok 用の環境変数（OAuth。`TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` は TikTok アプリの値）：
+
+```bash
+TIKTOK_CLIENT_KEY=
+TIKTOK_CLIENT_SECRET=
+TIKTOK_PRIVACY_LEVEL=   # 空なら SELF_ONLY。審査後に PUBLIC_TO_EVERYONE
+```
+
+API キーの設定：ユーザーが UI からアカウント登録時に入力（環境変数不要。TikTok を除く）
 
 ---
 
@@ -150,22 +181,23 @@ API キーの設定：ユーザーが UI からアカウント登録時に入力
 
 `lib/social/capabilities.ts` に定義。**数値は概算のため、実装時に公式ドキュメントで再確認必須。**
 
-| Feature | X | Instagram | Threads |
-|---------|---|-----------|---------|
-| **textPost** | ✓ | ✗ | ✓ |
-| **imagePost** | ✓ | ✓ | ✓ |
-| **videoPost** | ✓ | ✓ | ✓ |
-| **scheduledPost** (native) | ✗ | ✗ | ✗ |
-| **analytics** | ✓ | ✓ | ✓ |
-| **deletePost** | ✓ | ✗ | ✓ |
-| **requiresMedia** | ✗ | ✓ | ✗ |
-| **maxTextLength** | 280 | 2200 | 500 |
+| Feature | X | Instagram | Threads | TikTok |
+|---------|---|-----------|---------|---|
+| **textPost** | ✓ | ✗ | ✓ | ✗ |
+| **imagePost** | ✓ | ✓ | ✓ | ✗ |
+| **videoPost** | ✓ | ✓ | ✓ | ✓ |
+| **scheduledPost** (native) | ✗ | ✗ | ✗ | ✗ |
+| **analytics** | ✓ | ✓ | ✓ | ✗ |
+| **deletePost** | ✓ | ✗ | ✓ | ✗ |
+| **requiresMedia** | ✗ | ✓ | ✗ | ✓ |
+| **maxTextLength** | 280 | 2200 | 500 | 2200 |
 
 ### 注記
 
 - **X**: 280 字制限。画像なしテキスト投稿可能。削除 API あり。
 - **Instagram**: テキストのみ投稿は不可。画像 or ビデオが必須。ビジネスアカウント用 Graph API で連携。削除 API なし（Web UI のみ）。
 - **Threads**: 500 字制限。テキストのみ投稿可能。X の兄弟サービス API。削除あり。
+- **TikTok**: 動画のみ（テキスト・画像だけの投稿は不可）。本文はキャプションで 2200 字まで。数値は取得しない。過去の投稿は読まない。ネイティブの予約投稿と削除は、このアプリでは使っていない
 
 ---
 
@@ -267,7 +299,7 @@ RATE_LIMIT, TRANSIENT, UNKNOWN
 
 ## セキュリティ事項
 
-- **キー保存**: 必ず暗号化（AES-256-GCM）。平文保存厳禁。
+- **キー保存**: 必ず暗号化（AES-256-GCM）。平文保存厳禁。TikTok のトークンも同じ方法で暗号化する
 - **キー入力**: HTTPS 通信のみ。API キーは画面で直接入力し、ブラウザの履歴に保存されないよう注意。
 - **権限最小化**: SNS 側で設定可能な場合は、最小限の権限のみを有効にしておく。
 - **キーの保護**: SocialAccount.credentialHint は末尾 4 文字のみ表示。完全なキーは画面に表示しない。

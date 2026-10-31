@@ -19,8 +19,10 @@ npm run db:studio     # GUI でデータ閲覧・編集
 ### Platform
 
 ```
-X, INSTAGRAM, THREADS
+X, INSTAGRAM, THREADS, TIKTOK
 ```
+
+マイグレーション：`prisma/migrations/20261031020000_tiktok`。`ALTER TYPE "Platform" ADD VALUE 'TIKTOK';` で値を追加する（既存の行は変更しない）。
 
 ### PostStatus
 
@@ -190,7 +192,7 @@ SNS アカウント。API キー類は暗号化。パスワード・秘密情報
 | id | String (cuid) | Primary Key |
 | userId | String (fk) | ユーザー ID |
 | brandId | String? (fk) | ブランド ID（省略可。複数アカウント対応） |
-| platform | Platform | X / INSTAGRAM / THREADS |
+| platform | Platform | X / INSTAGRAM / THREADS / TIKTOK |
 | accountName | String | @ユーザー名など |
 | label | String | ユーザーが付ける管理用名前（任意） |
 | externalAccountId | String | SNS 側の ID |
@@ -267,7 +269,7 @@ SNS アカウント別の投稿内容・状態。同じ Post を複数アカウ�
 |--------|------|------|
 | id | String (cuid) | Primary Key |
 | postId | String (fk) | 投稿 ID |
-| platform | Platform | X / INSTAGRAM / THREADS |
+| platform | Platform | X / INSTAGRAM / THREADS / TIKTOK |
 | socialAccountId | String? (fk) | SNS アカウント ID（切断後は null） |
 | accountName | String | 投稿時点のアカウント名（切断後も履歴で表示） |
 | content | String | 投稿本文（最大 10000 字） |
@@ -277,8 +279,8 @@ SNS アカウント別の投稿内容・状態。同じ Post を複数アカウ�
 | idempotencyKey | String | 二重投稿防止（`${postId}:${socialAccountId}`） |
 | attempts | Int | 試行回数。デフォルト: 0 |
 | publishedAt | DateTime? | 投稿日時 |
-| externalPostId | String? | SNS 側の投稿 ID |
-| externalUrl | String? | SNS 側の投稿 URL |
+| externalPostId | String? | SNS 側の投稿 ID（TikTok は `publicaly_available_post_id` の先頭。無ければ `publish_id`） |
+| externalUrl | String? | SNS 側の投稿 URL（TikTok は null。TikTok の資料に投稿 URL の定義がないため） |
 | errorMessage | String? | ユーザー向けエラーメッセージ |
 | createdAt | DateTime | 作成日時 |
 | updatedAt | DateTime | 更新日時 |
@@ -378,7 +380,7 @@ AI Agent の実行記録。`trigger` が `SCHEDULED` なら毎週の自動実行
 | Column | Type | 説明 |
 |--------|------|------|
 | postPlatformId | String (fk, UNIQUE) | 対象の PostPlatform（削除で一緒に削除） |
-| platform | Platform | X / INSTAGRAM / THREADS |
+| platform | Platform | X / INSTAGRAM / THREADS / TIKTOK |
 | views | Int? | 表示回数（X: impression_count / Threads・Instagram: views） |
 | reach | Int? | リーチ（Instagram のみ） |
 | likes | Int? | いいね |
@@ -436,7 +438,7 @@ SNS から読んだ投稿（過去の投稿）。AI の「これまでの投稿�
 |--------|------|------|
 | id | String (cuid) | Primary Key |
 | socialAccountId | String (fk) | 対象の SocialAccount（削除で一緒に削除） |
-| platform | Platform | X / INSTAGRAM / THREADS |
+| platform | Platform | X / INSTAGRAM / THREADS / TIKTOK |
 | externalPostId | String | SNS 側の投稿 ID |
 | text | String | 本文（Instagram は caption） |
 | permalink | String? | SNS 側の投稿 URL |
@@ -514,7 +516,7 @@ REJECTED
 ### 暗号化
 
 API キー（`SocialAccount.credentialsEncrypted`）:
-- **内容**: キー類を JSON フォーマットで格納（X: `{apiKey, apiSecret, accessToken, accessTokenSecret}` / Threads & Instagram: `{accessToken}`）
+- **内容**: キー類を JSON フォーマットで格納（X: `{apiKey, apiSecret, accessToken, accessTokenSecret}` / Threads & Instagram: `{accessToken}` / TikTok: `{accessToken, refreshToken, openId, accessTokenExpiresAt, refreshTokenExpiresAt}`）
 - **Algorithm**: AES-256-GCM
 - **Format**: `v1.<iv>.<authTag>.<ciphertext>` (全て base64)
 - **Key**: 環境変数 `ENCRYPTION_KEY`（32 バイト base64）

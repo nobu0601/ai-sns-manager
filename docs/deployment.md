@@ -58,6 +58,20 @@ Web と Worker には**同じ値**を設定してください（特に `DATABASE
 
 Mock の画像はプレースホルダー、Mock の動画は再生できない架空の URL です。本番の投稿には使わないでください。
 
+### TikTok と公開ページの環境変数
+
+| 変数 | 内容 |
+| --- | --- |
+| `TIKTOK_CLIENT_KEY` | TikTok アプリの Client Key |
+| `TIKTOK_CLIENT_SECRET` | TikTok アプリの Client Secret。公開しない |
+| `TIKTOK_PRIVACY_LEVEL` | 投稿の公開範囲。空なら `SELF_ONLY`（本人のみ）。審査後に `PUBLIC_TO_EVERYONE`。TikTok が選べない値のときは `SELF_ONLY` にフォールバック |
+| `LEGAL_OPERATOR_NAME` | 利用規約・プライバシーポリシーに表示する運営者名 |
+| `LEGAL_CONTACT_EMAIL` | 同じページに表示する連絡先メール |
+
+- TikTok の連携（Web）と投稿・トークン更新（Worker）で使うため、**Web と Worker の両方に同じ値**を設定してください。
+- TikTok のアプリに登録するリダイレクト URI は `https://<公開URL>/api/social/tiktok/callback` です（本番の例：`https://ai-sns-manager.onrender.com/api/social/tiktok/callback`）。
+- TikTok のアプリ登録には、利用規約（`/terms`）とプライバシーポリシー（`/privacy`）の URL が必要です。
+
 ## ビルドとリリース手順
 
 ```bash
@@ -124,5 +138,6 @@ Worker は Render / Railway / 自前サーバーなど別の場所で動かし�
 | 分析の数値が「-」のまま・取得できない | 分析画面のアカウントに表示された理由を確認する。Threads は `threads_manage_insights`、Instagram は `instagram_business_manage_insights` の権限が必要 |
 | AI 分析が「実行中」のまま | Worker が起動しているか（`worker:analytics` が担当） |
 | AI 分析が失敗する | 数値のある公開済みの投稿が直近 90 日で3件以上必要 |
+| TikTok の投稿が非公開（SELF_ONLY）のまま | 未審査のアプリは非公開のみです。審査後に `TIKTOK_PRIVACY_LEVEL` を `PUBLIC_TO_EVERYONE` にしてください |
 
 Redis のデータが消えても、Worker の再起動時に DB 上の「予約中」の投稿がキューへ再登録されます。

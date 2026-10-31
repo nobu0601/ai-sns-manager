@@ -15,6 +15,15 @@
 - [ ] Threads / Instagram の長期トークンの自動更新（現在は期限切れ時に「キーを更新」で入れ直す）
 - [ ] 画像のアップロード（現在は Instagram の画像 URL 指定のみ）、X・Threads の画像付き投稿
 
+## TikTok 対応（動画のみ）
+
+- [x] TikTok でログインして連携（OAuth）、動画の投稿（Content Posting API・Direct Post）、AI 投稿案のキャプション、利用規約・プライバシーポリシーの公開ページ、SNS アカウント画面の手順（テキストのみ）
+- [ ] **TikTok 実アカウントで確認**：連携してから動画を1本投稿する（開発環境からは未確認。審査前は非公開のみ）
+- [ ] **TikTok 審査の申請**：審査を通したら `TIKTOK_PRIVACY_LEVEL=PUBLIC_TO_EVERYONE` にする
+- [ ] **利用規約・プライバシーポリシーの内容確認**：文面は草案。運営者が確認してから公開する（TikTok のアプリ登録で URL が必要）
+- [ ] **TikTok の数値取得**：現在は取得しない（analytics = false）。API の確認後に検討する
+- [ ] **TikTok 手順の実際の画面**：「はじめての方へ」の手順はテキストのみ。画面の画像を追加する
+
 ## Phase 2：AI 投稿生成（完了）
 
 - [x] `lib/ai/`（AIService / ClaudeProvider / MockAIProvider）と `prompts/`

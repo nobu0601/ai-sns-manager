@@ -5,7 +5,7 @@ README.md は利用者向け、CLAUDE.md は開発エージェント向けです
 
 ## 1. プロジェクト目的
 
-X・Instagram・Threads への投稿を一元管理し、AI による投稿生成・画像/動画生成・予約投稿・結果管理・分析まで行う。
+X・Instagram・Threads・TikTok への投稿を一元管理し、AI による投稿生成・画像/動画生成・予約投稿・結果管理・分析まで行う。
 最終目標は「SNS 運用を AI が支援・自動化するプラットフォーム」。
 Phase 1（MVP）→ 2（AI 生成）→ 3（メディア生成・Agent）→ 4（分析）の順に進め、**Phase を飛ばさない**。
 
@@ -51,7 +51,7 @@ workers/analytics-worker.ts            分析の Worker（SNS の数値取得・
 
 ## 5. セキュリティルール
 
-- SNS のログイン情報・パスワードを保存しない。連携はユーザーが入力する APIキー／アクセストークンで行う
+- SNS のログイン情報・パスワードを保存しない。連携はユーザーが入力する APIキー／アクセストークンで行う。TikTok は OAuth（TikTok の画面でログインし、認可後にトークンを受け取る）で連携し、パスワードは扱わない
 - キーは SNS に問い合わせて確認（`verifyCredentials`）してから、JSON ごと `lib/encryption/crypto.ts`（AES-256-GCM, `ENCRYPTION_KEY`）で暗号化して `SocialAccount.credentialsEncrypted` に保存する。画面・API レスポンスには出さない（`SocialAccountView` と末尾4文字の `credentialHint` だけを返す）
 - キーの入力欄は `type="password"`・`autoComplete="off"`。送信後はフォームの値を消す
 - API キー・秘密情報はすべて環境変数。`.env` はコミットしない。新しい変数は `.env.example` と README に追記する
@@ -78,6 +78,8 @@ workers/analytics-worker.ts            分析の Worker（SNS の数値取得・
 - SNS への HTTP 呼び出しは `lib/social/http.ts`（`callApi`）を通し、エラー分類を揃える。Adapter は `fetch` を差し替えられるようにし、偽のサーバーで単体テストする
 - 各 Adapter の先頭コメントに、呼び出す API と「どの公式情報で確認したか」を書く
 - 新しい SNS の追加：Prisma の `Platform` enum に追加 → Adapter 実装 → `registry.ts`・`capabilities.ts`・`credential-fields.ts`（入力するキー）に登録 → `PLATFORM_LABELS` に表示名
+- OAuth で連携する SNS（TikTok）は `CREDENTIAL_FIELDS = []`（入力するキーはない）にする。トークンの更新は `lib/social/account-service.ts` の `freshCredentials()` に任せる（期限の 5 分前に更新して保存。投稿の前と接続確認の前に呼ぶ）
+- 動画が必須の SNS（TikTok）は AI エージェントの投稿先にしない（`saveAgentConfig` が `AGENT_UNSUPPORTED_PLATFORM` で拒否）。数値を取得しない SNS は `analytics = false` にする（`collectMetrics` が飛ばす）
 
 ## 8. AI ルール（Phase 2 以降）
 
@@ -85,7 +87,8 @@ workers/analytics-worker.ts            分析の Worker（SNS の数値取得・
 - Claude の呼び出しは `lib/ai/claude-provider.ts` だけに置く。公式 SDK（`@anthropic-ai/sdk`）を使い、`fetch` で直接呼ばない。SDK の使い方を推測で書かない
 - テストや APIキー未設定時は `MockAIProvider`（`setAIProvider()` で差し替え可能）。テストで本物の Claude を呼ばない
 - 過去の投稿は `loadPostHistory()`（`lib/ai/history.ts`）を通して AI に渡す
-- `lib/ai/quality.ts` の `RECOMMENDED_LENGTH` は、`prompts/` の文字数の指示（x / instagram / threads の guidelines）と揃える
+- - ハッシュタグは各 SNS で約 5 個（X・Threads・TikTok は本文の末尾、Instagram は `hashtags` 欄）。`lib/ai/quality.ts` の `HASHTAG_RANGE`（3〜7 個）の外は警告、Instagram の 30 個超はエラー。X は本文（ハッシュタグを除く）を 50〜100 字に収め、280 字に入るようにする。`prompts/post-generation/system.md` の「多くの人に見てもらうための工夫」と矛盾させない
+- `lib/ai/quality.ts` の `RECOMMENDED_LENGTH` は、`prompts/` の文字数の指示（x / instagram / threads / tiktok の guidelines）と揃える
 - X の投稿は読まない（読み取りに料金がかかるため）。`fetchRecentPosts` の X は空を返す
 
 ## 9. 画像・動画生成と AI エージェントのルール

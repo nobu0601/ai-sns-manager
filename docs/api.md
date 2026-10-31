@@ -339,6 +339,7 @@
       "x": { "text": "..." },
       "instagram": { "caption": "...", "hashtags": ["#..."] },
       "threads": { "text": "..." },
+      "tiktok": { "text": "..." },
       "errors": [],
       "warnings": ["Xの文章にURLが含まれています。..."]
     }
@@ -348,7 +349,7 @@
 }
 ```
 
-- `drafts`: 依頼した型の順。`PostDraft`（`style` / `title` / `summary` / `x` / `instagram` / `threads`）に `id` / `errors` / `warnings` を加えた `CheckedDraft`
+- `drafts`: 依頼した型の順。`PostDraft`（`style` / `title` / `summary` / `x` / `instagram` / `threads` / `tiktok`）に `id` / `errors` / `warnings` を加えた `CheckedDraft`
 - `errors`: 作り直しても直らなかった問題（禁止キーワード、文字数超過など）。保存時には検証されず、予約・投稿時の投稿前チェックで確認される
 - `warnings`: 注意のみ（URL、ハッシュタグの多さなど）
 - `provider`: `claude` または `mock`（mock のときの `model` は `"mock"`）
@@ -387,7 +388,7 @@ AI のエラーは `AI_*` コード（下の一覧）で返す。
 
 ### POST /api/social/{platform}/connect
 
-API キーを入力してアカウントを連携。`platform`: X / INSTAGRAM / THREADS
+API キーを入力してアカウントを連携。`platform`: X / INSTAGRAM / THREADS（TikTok は下の OAuth 連携を使い、このルートでは連携しない）
 
 **Request:**
 ```json
@@ -451,6 +452,25 @@ API キーを入力してアカウントを連携。`platform`: X / INSTAGRAM / 
 SNS アカウント切断。
 
 **Response (204):** No Content
+
+---
+
+### GET /api/social/tiktok/authorize
+
+「TikTokでログインして連携」のボタンが開くルート。ランダムな `state` を httpOnly Cookie `tiktok_oauth_state` に保存し、TikTok の認可画面（`https://www.tiktok.com/v2/auth/authorize/`）へリダイレクトする。送るパラメータ：`client_key`、`response_type=code`、`scope=user.info.basic,video.publish`、`redirect_uri`、`state`。
+
+- Mock モード（`SOCIAL_PROVIDER_MODE=mock`）では TikTok を呼ばず、架空のアカウントを作る
+
+### GET /api/social/tiktok/callback
+
+TikTok が認可後に戻すルート。`state` が Cookie と一致するか確認し、`code` をアクセストークンに交換する（`POST https://open.tiktokapis.com/v2/oauth/token/`、`grant_type=authorization_code`）。付与されたスコープに `video.publish` が無い場合は失敗する。成功するとアカウントを保存し、`/accounts?tiktok=…` にリダイレクトして画面にバナーを出す。
+
+| `tiktok` の値 | 意味 |
+| --- | --- |
+| `connected` | 連携できた |
+| `denied` | TikTok の許可画面で許可されなかった |
+| `not_configured` | TikTok の設定（`TIKTOK_CLIENT_KEY` など）がない |
+| `failed` | 連携に失敗した（`state` の不一致、`video.publish` の不足など） |
 
 ---
 
@@ -636,7 +656,7 @@ SNS アカウント切断。
 
 - `runWeekday`（0=日〜6=土）と `runTime`（HH:mm）は毎週の自動実行の日時（日本時間）。`weeklyEnabled: false` にすると登録を解除する
 - `postsPerWeek`: 1〜7。`preferredWeekdays` / `preferredTime`: 投稿枠の優先曜日・時刻
-- `targetAccountIds`: 自分の SNS アカウントのみ（他人のものは 404）。最大20件
+- `targetAccountIds`: 自分の SNS アカウントのみ（他人のものは 404）。最大20件。TikTok のアカウントは指定できない（`AGENT_UNSUPPORTED_PLATFORM`）
 - `generateImages`: `true` なら投稿ごとに画像を生成する。Instagram を投稿先に含む場合は、この値にかかわらず生成する
 
 **Response (200):** `{ "config": { ... } }`（`AgentConfig` のフィールド）
@@ -692,6 +712,17 @@ AI 分析を登録する。**Request:** `{ "brandId": "brand123" }`。**Response
 
 ---
 
+## 公開ページ（ログイン不要）
+
+| パス | 内容 |
+| --- | --- |
+| `/terms` | 利用規約 |
+| `/privacy` | プライバシーポリシー |
+
+運営者名と連絡先は `LEGAL_OPERATOR_NAME` / `LEGAL_CONTACT_EMAIL` を表示する。文面は草案で、運営者が確認してから使う。ログイン不要の公開パス（`auth.config.ts`）。TikTok のアプリ登録では両方の URL が必要。
+
+---
+
 ## エラーコード一覧
 
 | Code | 説明 | HTTP |
@@ -706,6 +737,7 @@ AI 分析を登録する。**Request:** `{ "brandId": "brand123" }`。**Response
 | INTERNAL_ERROR | サーバーエラー | 500 |
 | AGENT_NOT_CONFIGURED | AI Agent の投稿先が未設定 | 400 |
 | AGENT_RUNNING | 同じブランドの計画を作成中 | 409 |
+| AGENT_UNSUPPORTED_PLATFORM | AI Agent の投稿先に、対応していない SNS（TikTok）を指定した | 400 |
 | ANALYSIS_RUNNING | 同じブランドの分析を実行中 | 409 |
 | AI_NOT_CONFIGURED | AI の APIキーが未設定 | 503 |
 | AI_AUTH | AI の APIキーが不正、または権限なし | 502 |

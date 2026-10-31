@@ -2,7 +2,7 @@
 
 ## 概要
 
-AI SNS Manager は Next.js / React ベースの Web アプリで、X / Instagram / Threads への投稿を生成・予約・管理します。
+AI SNS Manager は Next.js / React ベースの Web アプリで、X / Instagram / Threads / TikTok への投稿を生成・予約・管理します。
 
 ### システム構成
 
@@ -128,7 +128,7 @@ User / Post / SocialAccount などのモデルを永続化。
 
 ## AI 投稿生成
 
-テーマとブランド情報から X / Instagram / Threads 向けの投稿案を作る。案は DB に保存せず、採用した時点で通常の投稿（`Post.aiGenerated = true`）として保存する。
+テーマとブランド情報から X / Instagram / Threads / TikTok 向けの投稿案を作る。案は DB に保存せず、採用した時点で通常の投稿（`Post.aiGenerated = true`）として保存する。
 
 ```
 lib/ai/
@@ -168,7 +168,7 @@ interface AIProvider {
 
 ### プロンプト
 
-`prompts/post-generation/system.md` と `prompts/{x,instagram,threads}/guidelines.md` を連結し、初回に読み込んでキャッシュする。`process.cwd()` 基準で読むため、リポジトリのルートで起動する前提。テーマやブランド情報はユーザーメッセージとして別に渡す。
+`prompts/post-generation/system.md` と `prompts/{x,instagram,threads,tiktok}/guidelines.md` を連結し、初回に読み込んでキャッシュする。system.md には「多くの人に見てもらうための工夫」（冒頭の一文でのフック、広いタグ・地域のタグ・テーマのタグ・ブランドのタグの組み合わせ、保存・コメント・共有を促す一行）も書いてある。`process.cwd()` 基準で読むため、リポジトリのルートで起動する前提。テーマやブランド情報はユーザーメッセージとして別に渡す。
 
 ### 品質チェックと作り直し
 
@@ -177,10 +177,10 @@ interface AIProvider {
 1. 依頼された型（既定は5型）で Provider を呼ぶ。依頼した型に合わない案は捨て、残りを型の順に並べる
 2. `checkDraft()` が各 SNS の文章を確認する
    - errors（作り直し対象）: 空の文章、文字数超過、禁止キーワード、Instagram のハッシュタグ30個超
-   - warnings（表示のみ）: URL を含む、ハッシュタグが目安を超える
+   - warnings（表示のみ）: URL を含む、ハッシュタグが `HASHTAG_RANGE`（3〜7 個）の範囲外
 3. `findDuplicates()`: X の文章が他の案と同じなら errors
 4. 過去の投稿との類似: `loadPostHistory()` の投稿と文章を比べ、文字の 2 文字組（bigram）の重なりが `SIMILARITY_THRESHOLD`（0.6）以上なら errors。作り直しの指示には、似ている過去の投稿を入れる。20 字未満の文章は比べない
-5. 推奨文字数（`RECOMMENDED_LENGTH`）: X は 50〜130 字、Instagram は本文 150〜700 字（ハッシュタグを除く）、Threads は 50〜250 字。範囲外なら errors。上限（`capabilities.maxTextLength`）とは別
+5. 推奨文字数（`RECOMMENDED_LENGTH`）: X は 50〜100 字（ハッシュタグを除く本文）、Instagram は本文 150〜700 字（ハッシュタグを除く）、Threads は 50〜250 字。範囲外なら errors。上限（`capabilities.maxTextLength`）とは別
 6. errors のある案だけ、問題点を `feedback` として渡して作り直す。作り直しは最大 `MAX_REGENERATIONS`（2）回（呼び出しは最大3回）
 7. 作り直しても直らなかった問題は `errors` に残して返す
 
@@ -232,6 +232,7 @@ lib/media/
 - **X**（`x/x-adapter.ts`）: 画像は `POST /2/media/upload`。動画は `upload/initialize` → `upload/{id}/append`（4MB ずつ）→ `finalize` → `STATUS` で処理完了を待つ。投稿は `POST /2/tweets` の `media.media_ids`
 - **Threads**（`threads/threads-adapter.ts`）: `POST me/threads`（`media_type` = IMAGE / VIDEO、`image_url` / `video_url`）でコンテナを作る → `GET {id}?fields=status,error_message` で状態確認 → `POST me/threads_publish`
 - **Instagram**（`instagram/instagram-adapter.ts`）: 画像は `POST {ig-user-id}/media`（`image_url`）。動画は `media_type=REELS`（`video_url`）。`status_code` が FINISHED になるまで待ち、`POST {ig-user-id}/media_publish`。画像・動画が必須
+- **TikTok**（`tiktok/tiktok-adapter.ts`）: 動画のみ。`POST /v2/post/publish/creator_info/query/` で公開範囲を確認 → 動画をダウンロード → `POST /v2/post/publish/video/init/`（`source` = `FILE_UPLOAD`）→ `PUT {upload_url}`（`Content-Range`。5MB 未満は 1 回、それ以上は 10MB ずつ送り、残りは最後のチャンクに入れる）→ `POST /v2/post/publish/status/fetch/` で `PUBLISH_COMPLETE` か `FAILED` まで確認
 
 ## AI Agent
 
@@ -246,7 +247,8 @@ lib/media/
 7. 結果を `AgentRun.summary` に書く。1件も作れなければ FAILED
 
 - **承認**：`approveAgentRun()`（`POST /api/agent/runs/{id}/approve`）が対象の投稿を計画日時で `schedulePost(approve: true)` する
-- **毎週の自動実行**：`AgentConfig.weeklyEnabled` が true のとき `upsertWeeklyAgent()` が `agent-run` キューに job scheduler（ID `agent-weekly-{configId}`、cron `m h * * 曜日`、`tz: Asia/Tokyo`）を登録する。発火すると `startWeeklyRun()` が `trigger = SCHEDULED` の AgentRun を作る。ai worker の起動時に `reconcileWeeklySchedules()` が DB の設定に合わせて登録し直す
+- **毎週の自動実行**：`AgentConfig.weeklyEnabled` が true のとき `upsertWeeklyAgent()` が `agent-run` キューに job scheduler（ID `agent-weekly-{configId}`、cron `m h * * 曜日`、`tz: Asia/Tokyo`）を登録する。発火すると `startWeeklyRun()` が `trigger = SCHEDULED` の AgentRun を作る。ai worker の起動時に `reconcileWeeklySchedules()` が DB の設定に合わせて登録し直す。
+- **投稿先**：TikTok は動画が必要なため投稿先にできない（`saveAgentConfig` が `AGENT_UNSUPPORTED_PLATFORM` で拒否。画面にも TikTok のアカウントは出さない）
 
 ## 分析（Phase 4）
 
@@ -256,6 +258,7 @@ lib/media/
 
 1. `collectMetrics()`（`refresh-all` / `refresh` ジョブ）が、直近 30 日に公開された投稿の数値を `PostMetric` に保存する
    - 各 Adapter の `fetchPostMetrics()`（投稿の数値）と `fetchFollowerCount()`（フォロワー数）を呼ぶ
+   - `capabilities.analytics` が false の SNS（TikTok）は呼ばない（飛ばす）
    - フォロワー数は日本時間の 1 日に 1 件（`AccountMetric`）。同じ日は上書きする
    - 1 件の投稿が失敗（削除されたなど）しても、ほかの投稿は続ける
    - アカウントごとの失敗は `SocialAccount.metricsError`（画面に出す文）と `metricsCheckedAt` に残す
@@ -293,7 +296,7 @@ lib/media/
 
 ## Adapter パターン
 
-各 SNS は `SocialPlatformAdapter` を実装。API キー（または OAuth 1.0a トークン）で認証。
+各 SNS は `SocialPlatformAdapter` を実装。API キー（または OAuth 1.0a トークン）で認証。TikTok は OAuth 2.0 でトークンを取得する。
 
 ```typescript
 interface SocialPlatformAdapter {
@@ -321,8 +324,8 @@ interface SocialPlatformAdapter {
   - `MOCK_TRANSIENT_FAILURE_RATE` で確率的失敗テスト
 
 - **Live Mode** (本番・Step 11-13 以降)
-  - `XAdapter`, `InstagramAdapter`, `ThreadsAdapter`
-  - 実際の SNS API を呼び出し（X API v2、Meta Graph API）
+  - `XAdapter`, `InstagramAdapter`, `ThreadsAdapter`, `TikTokAdapter`
+  - 実際の SNS API を呼び出し（X API v2、Meta Graph API、TikTok の Content Posting API）
 
 ### Registry (platform 選択)
 
@@ -348,6 +351,16 @@ export function getAdapter(platform: Platform): SocialPlatformAdapter {
 SNS のキー（API キー / OAuth 1.0a トークン など）を DB に保存する際は AES-256-GCM で暗号化。
 保存形式: `v1.<iv>.<authTag>.<ciphertext>`（全て base64）
 `SocialAccount.credentialsEncrypted` に JSON フォーマットで格納。
+
+### TikTok の OAuth 連携
+
+1. 「TikTokでログインして連携」→ `GET /api/social/tiktok/authorize`。ランダムな `state` を httpOnly Cookie `tiktok_oauth_state` に保存し、TikTok の認可画面（`https://www.tiktok.com/v2/auth/authorize/`）へ転送する（`client_key`、`response_type=code`、`scope=user.info.basic,video.publish`、`redirect_uri`、`state`）
+2. TikTok が `GET /api/social/tiktok/callback` に戻す。`state` を確認し、`code` をトークンに交換する（`POST https://open.tiktokapis.com/v2/oauth/token/`、`grant_type=authorization_code`）。付与されたスコープに `video.publish` が無ければ失敗
+3. アカウントを保存し、`/accounts?tiktok=…` に戻す（`connected` / `denied` / `not_configured` / `failed`。画面にバナーを出す）
+
+- 保存：`{accessToken, refreshToken, openId, accessTokenExpiresAt, refreshTokenExpiresAt}` の JSON を暗号化して `SocialAccount.credentialsEncrypted` に入れる。アクセストークンは 24 時間、リフレッシュトークンは 365 日（TikTok の公式ドキュメント）
+- 更新：`freshCredentials()`（`lib/social/account-service.ts`）が期限の 5 分前に `grant_type=refresh_token` で更新し、保存する。投稿の前と「接続確認」の前に呼ぶ
+- Mock モード：authorize が TikTok を呼ばず、架空のアカウントを作る
 
 ### ログ・秘密情報マスク
 
@@ -442,6 +455,7 @@ ai-sns-manager/
       capabilities.ts
       errors.ts
       validate.ts
+      setup-guides.ts   ← SNS アカウント画面の「はじめての方へ」手順（テキストのみ）
       mock/
         mock-adapter.ts
       x/
@@ -450,6 +464,8 @@ ai-sns-manager/
         instagram-adapter.ts  (Step 12)
       threads/
         threads-adapter.ts    (Step 13)
+      tiktok/
+        tiktok-adapter.ts     (OAuth 2.0)
     queue/
       post-queue.ts
       jobs.ts           ← 画像・動画 / AI Agent / 分析のキュー
@@ -496,3 +512,4 @@ ai-sns-manager/
 3. `lib/social/registry.ts` の `liveAdapters` に登録
 4. `lib/social/capabilities.ts` で機能制約を定義
 5. API リファレンスの URL と必要な権限をコメント欄に記載
+6. OAuth で連携する SNS（TikTok）は `CREDENTIAL_FIELDS = []` にし、トークンの更新は `freshCredentials()`（`lib/social/account-service.ts`）に任せる
