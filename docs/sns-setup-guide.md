@@ -60,6 +60,8 @@ Meta の開発者サイトでアプリを作り、自分の Threads アカウン
 - Threads の許可画面で「許可」を押すと、長い英数字のトークン（長期間アクセストークン）が表示されます。全部コピーします。
 - 自分のアカウントが出てこないときは、同じ欄の「Threadsテスターを追加または削除」からテスターに追加し、手順4の承認を済ませてください。
 
+![設定の一番下の「ユーザートークン生成ツール」。自分のアカウントの「アクセストークンを生成」を押す](../public/guides/threads/06-token.webp)
+
 ### 6. このアプリに貼り付ける
 
 - この画面の Threads の「＋ アカウントを追加」を押し、「アクセストークン」にコピーしたトークンを貼って「連携する」を押します。
@@ -72,7 +74,7 @@ Meta の開発者サイトでアプリを作り、自分の Threads アカウン
 
 ## Instagram
 
-Meta の開発者サイトでアプリを作り、Instagram の「Generate token」でアクセストークンを発行します（約10分・無料）。
+Threads と同じ Meta のアプリに Instagram のユースケースを追加し、「トークンを生成」でアクセストークンを発行します（約10分・無料）。
 
 ![Instagramのキーの取得方法](screenshots/guide-Instagram.png)
 
@@ -80,36 +82,37 @@ Meta の開発者サイトでアプリを作り、Instagram の「Generate token
 
 - Instagram の「プロアカウント」（ビジネス／クリエイター。Instagram の設定から無料で切り替えられます）
 - アカウントが公開になっていること（非公開アカウントは使えません）
-- Threads 用とは別のアプリを作ります
+- Threads の手順で作った Meta のアプリ（まだなら Threads の手順1で作ります）
 
-### 1. Meta の開発者サイトでアプリを作る
+### 1. アプリに Instagram のユースケースを追加する
 
-- https://developers.facebook.com/apps を開き、右上の「アプリを作成」を押します。
-- ビジネスの接続は今はスキップして「次へ」。
-- ユースケースは「その他」、アプリの種類は「ビジネス」を選びます（「ビジネス」でないと Instagram を追加できません）。
-- アプリ名と連絡先メールを入れて作成します。
+- https://developers.facebook.com/apps で、Threads 用に作ったアプリを開きます。
+- 左メニューの「ユースケース」を開き、右上の「ユースケースを追加」から「Instagramでメッセージとコンテンツを管理」を追加します。
+- これから新しくアプリを作る場合は、作成時のユースケースで「Threads APIにアクセス」と一緒にこれにもチェックを入れておけば、この手順は不要です。
 
-### 2. Instagram を追加する
+### 2. 自分の Instagram アカウントを「Instagramテスター」に追加する
 
-- アプリの画面に並んでいる製品の中から「Instagram」を探し、「設定」を押します。
+- 左メニューの「アプリの役割」→「役割」を開き、右上の「メンバーを追加」を押します。
+- 「アプリに人を追加」の画面で「Instagramテスター」を選び、入力欄に自分の Instagram のユーザーネームを入れて「追加」を押します。
+- Instagram の「アプリとウェブサイト」の設定画面に届く招待を承認します。
 
-### 3. 自分の Instagram アカウントを追加する
+### 3. アカウントを追加して、トークンを生成する
 
-- 左メニューの「Instagram」→「API setup with Instagram business login」を開きます。
-- 「アクセストークンを生成」（Generate access tokens）の欄で「アカウントを追加」を押し、Instagram にログインして許可します。
-
-### 4. トークンを発行してコピーする
-
-- 追加したアカウントの横の「Generate token」を押し、表示されたトークンを全部コピーします。
+- 左メニューの「ユースケース」→ Instagram のユースケースの「カスタマイズ」を押します。
+- ① 左の「API setup with Unified login」を開きます。
+- ② 「2. アクセストークンを生成する」の「アカウントを追加」を押し、Instagram にログインして許可します。
+- ③ 追加した自分のアカウントの行の「トークンを生成」を押し、表示されたトークンを全部コピーします。
 - 正しいトークンは、ふつう「IG」で始まります。「EAA」で始まるものは Facebook ログイン用なので使えません。
 
-### 5. このアプリに貼り付ける
+![Instagram API のカスタマイズ。「API setup with Unified login」→「アカウントを追加」→ 自分のアカウントの「トークンを生成」](../public/guides/instagram/03-token.webp)
+
+### 4. このアプリに貼り付ける
 
 - この画面の Instagram の「＋ アカウントを追加」を押し、「アクセストークン」に貼って「連携する」を押します。
 
 **連携したあとの注意**
 
-- このトークンは60日有効です（Meta 公式ドキュメント）。期限が切れたら手順4でもう一度発行し、「キーを更新」で入れ直してください。
+- ダッシュボードで生成したトークンは60日有効です（Meta 公式ドキュメント）。期限が切れたら手順3でもう一度生成し、「キーを更新」で入れ直してください。
 - Instagram は画像か動画が無いと投稿できません。投稿作成画面で画像を付けてください。
 
 参考：[Meta 公式：Instagram 用の Meta アプリの作成](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/create-a-meta-app-with-instagram) / [Meta 公式：Get started（トークンの発行）](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/get-started)

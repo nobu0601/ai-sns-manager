@@ -217,7 +217,7 @@ describe("キー確認の失敗の調査・案内", async () => {
     expect(apiErrorSummary("text")).toBeUndefined();
   });
   it("Instagram に Facebook ログインのトークンを入れたときは案内する", () => {
-    expect(credentialMistakeHint("INSTAGRAM", { accessToken: "EAAabc" })).toContain("Instagram business login");
+    expect(credentialMistakeHint("INSTAGRAM", { accessToken: "EAAabc" })).toContain("API setup with Unified login");
     expect(credentialMistakeHint("INSTAGRAM", { accessToken: "IGAAabc" })).toBeNull();
     expect(credentialMistakeHint("THREADS", { accessToken: "EAAabc" })).toBeNull();
   });

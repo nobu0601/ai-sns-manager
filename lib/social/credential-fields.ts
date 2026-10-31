@@ -29,7 +29,7 @@ const MISTAKE_HINTS: Partial<Record<Platform, (c: Record<string, string>) => str
   // Facebook ログインのトークン（EAA で始まる）は graph.instagram.com では使えない
   INSTAGRAM: (c) =>
     c.accessToken?.trim().startsWith("EAA")
-      ? "入力されたのは Facebook ログイン用のトークンのようです。Meta のアプリの「Instagram」→「API setup with Instagram business login」で「Generate token」を押して発行したトークン（通常 IG で始まります）を入れてください。"
+      ? "入力されたのは Facebook ログイン用のトークンのようです。Meta のアプリの Instagram のユースケース →「API setup with Unified login」で「トークンを生成」を押して発行したトークン（通常 IG で始まります）を入れてください。"
       : null,
 };
 
