@@ -1,7 +1,7 @@
 import { PLATFORM_CAPABILITIES } from "../capabilities";
 import { SocialPublishError } from "../errors";
 import type { FetchLike } from "../http";
-import { GraphClient, collectPerPost, withVersion } from "../meta/graph";
+import { GraphClient, collectPerPost, toRecentPosts, withVersion } from "../meta/graph";
 import { primaryMedia } from "../media";
 import { readInsights, toMetricValues } from "../metrics/values";
 import { validateAgainstCapabilities } from "../validate";
@@ -10,6 +10,7 @@ import type {
   PlatformCredentials,
   PlatformPost,
   PostMetricsResult,
+  RecentPost,
   PublishedPost,
   SocialPlatformAdapter,
   TokenCredentials,
@@ -29,6 +30,9 @@ import type {
 //   投稿 GET {media-id}/insights?metric=views,reach,likes,comments,shares,saved → data[].values[0].value
 //        （権限 instagram_business_manage_insights。impressions は2024年7月以降の投稿で廃止のため使わない）
 //   フォロワー数 GET me?fields=followers_count（権限 instagram_business_basic）
+// 過去の投稿 GET me/media?fields=id,caption,timestamp,permalink&limit=…
+//   公式ドキュメント（IG Media）では caption は「Facebook ログイン方式のみ」とされているため、
+//   取得できない（エラー・本文なし）ときは空として扱い、投稿や分析は止めない
 const POST_METRICS = "views,reach,likes,comments,shares,saved";
 type WaitOptions = Parameters<GraphClient["waitForContainer"]>[2];
 const VIDEO_WAIT = { attempts: 60, intervalMs: 5000 };
@@ -105,6 +109,19 @@ export class InstagramAdapter implements SocialPlatformAdapter {
     const me = await this.client(credentials).get<{ followers_count?: number }>("me", { fields: "followers_count" });
     if (typeof me.followers_count !== "number") throw new SocialPublishError("UNKNOWN", "INSTAGRAM", "no followers_count");
     return me.followers_count;
+  }
+
+  async fetchRecentPosts(credentials: PlatformCredentials, _account: VerifiedAccount, limit: number): Promise<RecentPost[]> {
+    try {
+      const res = await this.client(credentials).get<{ data?: { id?: string; caption?: string; timestamp?: string; permalink?: string }[] }>(
+        "me/media",
+        { fields: "id,caption,timestamp,permalink", limit: String(limit) },
+      );
+      return toRecentPosts((res.data ?? []).map((p) => ({ id: p.id, text: p.caption, timestamp: p.timestamp, permalink: p.permalink })));
+    } catch (err) {
+      if (err instanceof SocialPublishError && err.kind === "CONTENT") return [];
+      throw err;
+    }
   }
 
   async validatePost(post: PlatformPost): Promise<ValidationResult> {

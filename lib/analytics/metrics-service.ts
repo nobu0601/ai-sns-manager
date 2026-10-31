@@ -11,6 +11,44 @@ import { getAdapter, isMockMode } from "@/lib/social/registry";
 
 // 数値を取り直す対象：投稿から30日以内（それより古い投稿の数値はほとんど変わらないため）
 export const METRICS_WINDOW_DAYS = 30;
+// SNS から読み込む過去の投稿の件数（AI が内容を重ねないために使う）
+export const RECENT_POSTS_LIMIT = 30;
+
+// SNS にある過去の投稿を読み込んで保存する。このアプリから投稿したもの（PostPlatform にある）は除く。
+// 読み込めなくても数値の取得は続ける（失敗はログだけ）
+async function syncRecentPosts(
+  account: { id: string; userId: string; platform: import("@prisma/client").Platform },
+  adapter: ReturnType<typeof getAdapter>,
+  credentials: ReturnType<typeof readCredentials>,
+  verified: { accountName: string; externalAccountId: string },
+  now: Date,
+): Promise<number> {
+  try {
+    const posts = await adapter.fetchRecentPosts(credentials, verified, RECENT_POSTS_LIMIT);
+    if (posts.length === 0) return 0;
+    const own = await prisma.postPlatform.findMany({
+      where: { socialAccountId: account.id, externalPostId: { in: posts.map((p) => p.externalPostId) } },
+      select: { externalPostId: true },
+    });
+    const ownIds = new Set(own.map((o) => o.externalPostId));
+    let saved = 0;
+    for (const p of posts) {
+      if (ownIds.has(p.externalPostId)) continue;
+      const data = { platform: account.platform, text: p.text.slice(0, 5000), permalink: p.permalink ?? null, publishedAt: p.publishedAt, fetchedAt: now };
+      await prisma.externalPost.upsert({
+        where: { socialAccountId_externalPostId: { socialAccountId: account.id, externalPostId: p.externalPostId } },
+        create: { socialAccountId: account.id, externalPostId: p.externalPostId, ...data },
+        update: data,
+      });
+      saved++;
+    }
+    return saved;
+  } catch (err) {
+    const e = toSocialError(err, account.platform);
+    logger.warn("history.sync_failed", { accountId: account.id, platform: account.platform, kind: e.kind, error: e.message });
+    return 0;
+  }
+}
 
 export interface CollectSummary {
   accounts: number;
@@ -90,6 +128,9 @@ export async function collectMetrics({ userId, now = new Date() }: { userId?: st
       const message = metricsMessageFor(e.kind, account.platform);
       if (!problems.includes(message)) problems.push(message);
     }
+
+    // 過去の投稿（AI が内容を重ねないため）
+    await syncRecentPosts(account, adapter, credentials, verified, now);
 
     const metricsError = problems.length > 0 ? problems.join(" ") : null;
     await prisma.socialAccount.update({ where: { id: account.id }, data: { metricsError, metricsCheckedAt: now } });

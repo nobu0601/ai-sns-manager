@@ -9,6 +9,7 @@ import type {
   PlatformCredentials,
   PlatformPost,
   PostMetricsResult,
+  RecentPost,
   PublishedPost,
   SocialPlatformAdapter,
   ValidationResult,
@@ -206,6 +207,11 @@ export class XAdapter implements SocialPlatformAdapter {
     const count = res.data?.public_metrics?.followers_count;
     if (typeof count !== "number") throw new SocialPublishError("UNKNOWN", "X", "no followers_count", res);
     return count;
+  }
+
+  // 過去の投稿の読み込みは X では行わない（読み取りが有料のため。必要になったら公式SDKで仕様を確認して実装する）
+  async fetchRecentPosts(): Promise<RecentPost[]> {
+    return [];
   }
 
   async validatePost(post: PlatformPost): Promise<ValidationResult> {

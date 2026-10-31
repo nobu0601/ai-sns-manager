@@ -8,7 +8,7 @@ import { instagramContent } from "@/lib/ai/quality";
 import { DRAFT_STYLE_LABELS, type CheckedDraft, type DraftStyle } from "@/lib/ai/types";
 import { ApiError, apiFetch } from "@/lib/client/api";
 
-type DraftResponse = { drafts: CheckedDraft[]; model: string; provider: string };
+type DraftResponse = { drafts: CheckedDraft[]; model: string; provider: string; historyCount: number };
 
 type Props = {
   topic: string;
@@ -22,7 +22,7 @@ type Props = {
 export function AiDraftPanel({ topic, brandId, onAdopt, autoGenerate = false }: Props) {
   const [objective, setObjective] = useState("");
   const [drafts, setDrafts] = useState<CheckedDraft[]>([]);
-  const [meta, setMeta] = useState<{ model: string; provider: string } | null>(null);
+  const [meta, setMeta] = useState<{ model: string; provider: string; historyCount: number } | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adopted, setAdopted] = useState<string | null>(null);
@@ -41,7 +41,7 @@ export function AiDraftPanel({ topic, brandId, onAdopt, autoGenerate = false }: 
     try {
       const res = await request();
       setDrafts(res.drafts);
-      setMeta({ model: res.model, provider: res.provider });
+      setMeta({ model: res.model, provider: res.provider, historyCount: res.historyCount });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "投稿案を作れませんでした");
     } finally {
@@ -66,7 +66,7 @@ export function AiDraftPanel({ topic, brandId, onAdopt, autoGenerate = false }: 
       const res = await request([draft.style]);
       const next = res.drafts[0];
       if (next) setDrafts((prev) => prev.map((d) => (d.id === draft.id ? next : d)));
-      setMeta({ model: res.model, provider: res.provider });
+      setMeta({ model: res.model, provider: res.provider, historyCount: res.historyCount });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "作り直せませんでした");
     } finally {
@@ -84,7 +84,15 @@ export function AiDraftPanel({ topic, brandId, onAdopt, autoGenerate = false }: 
       </div>
       <p className="text-xs text-slate-600">
         上の「投稿テーマ」と「ブランド」の設定をもとに、5つの型（{Object.values(DRAFT_STYLE_LABELS).join("・")}）で案を作り、X・Instagram・Threads 向けに書き分けます。
+        これまでの投稿（SNS にある過去の投稿を含む）と内容が重ならないようにし、各SNSにちょうどよい長さで書きます。
       </p>
+      {meta && (
+        <p role="status" className="text-xs text-slate-500">
+          {meta.historyCount > 0
+            ? `これまでの投稿 ${meta.historyCount}件と重ならないように作りました。`
+            : "参考にできるこれまでの投稿はまだありません（SNSアカウントを連携すると、過去の投稿を読み込みます）。"}
+        </p>
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1">
           <label className={label} htmlFor="ai-objective">今回の目的（任意）</label>

@@ -85,6 +85,7 @@ describe.skipIf(!hasTestDatabase)("分析（統合）", async () => {
     await prisma.analysisReport.deleteMany({ where: { userId } });
     await prisma.agentRun.deleteMany({ where: { userId } });
     await prisma.accountMetric.deleteMany({ where: { socialAccount: { userId } } });
+    await prisma.externalPost.deleteMany({ where: { socialAccount: { userId } } });
   });
 
   afterEach(() => {
@@ -223,6 +224,41 @@ describe.skipIf(!hasTestDatabase)("分析（統合）", async () => {
     const run2 = await agent.startAgentRun(userId, brandId);
     await agent.executeAgentRun(run2.id, NOW);
     expect(ai.planCalls[1].insights?.summary).toBeTruthy();
+  });
+
+  it("SNS にある過去の投稿を読み込んで保存する（このアプリから投稿したものは除く）", async () => {
+    const own = await publishedPost("アプリからの投稿", "カフェ", threadsId, "THREADS", daysAgo(1));
+    const ownPp = await prisma.postPlatform.findFirstOrThrow({ where: { postId: own.id } });
+    // Mock の Threads は「<アカウントID>-past-1/2」の2件を返す。1件をアプリから投稿したことにする
+    const acc = await prisma.socialAccount.findUniqueOrThrow({ where: { id: threadsId } });
+    await prisma.postPlatform.update({ where: { id: ownPp.id }, data: { externalPostId: `${acc.externalAccountId}-past-1` } });
+    await prisma.externalPost.deleteMany({ where: { socialAccountId: threadsId } });
+
+    await metricsService.collectMetrics({ userId, now: NOW });
+    const saved = await prisma.externalPost.findMany({ where: { socialAccountId: threadsId } });
+    expect(saved.map((p) => p.externalPostId)).toEqual([`${acc.externalAccountId}-past-2`]);
+
+    // 投稿案を作るとき、これまでの投稿として AI に渡る（アプリの投稿と SNS の投稿の両方）
+    const { generateDrafts } = await import("@/lib/ai/ai-service");
+    const result = await generateDrafts(userId, { topic: "週末", brandId, styles: ["story"] });
+    expect(result.historyCount).toBeGreaterThanOrEqual(2);
+    const sent = ai.calls[0].history!.map((h) => h.text);
+    expect(sent).toContain(saved[0].text);
+    expect(sent).toContain("アプリからの投稿の本文");
+  });
+
+  it("過去の投稿と似すぎた案は、指摘して作り直させる", async () => {
+    const { generateDrafts } = await import("@/lib/ai/ai-service");
+    // Mock が最初に返す Threads の文章と同じ投稿が、SNS に既にあることにする
+    const first = await new MockAIProvider().generate({ topic: "週末", brand: null, styles: ["story"] });
+    await prisma.externalPost.create({
+      data: { socialAccountId: threadsId, platform: "THREADS", externalPostId: `dup-${randomUUID()}`, text: first.drafts[0].threads.text, publishedAt: daysAgo(2) },
+    });
+    const result = await generateDrafts(userId, { topic: "週末", brandId, styles: ["story"] });
+    expect(ai.calls).toHaveLength(2);
+    expect(ai.calls[1].feedback?.[0].issues.join()).toContain("似すぎています");
+    expect(result.drafts[0].errors).toEqual([]);
+    expect(result.drafts[0].threads.text).not.toBe(first.drafts[0].threads.text);
   });
 
   it("数値の更新はキューに依頼する", async () => {

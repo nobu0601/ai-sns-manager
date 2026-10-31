@@ -3,9 +3,12 @@ import { prisma } from "@/lib/database/prisma";
 import { notFound } from "@/lib/errors/service-error";
 import { logger } from "@/lib/logging/logger";
 import { AIError } from "./errors";
-import { checkDraft, findDuplicates } from "./quality";
+import { slotLabel } from "@/lib/agent/slots";
+import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
+import { loadPostHistory } from "./history";
+import { checkDraft, findDuplicates, findSimilarPast } from "./quality";
 import { getAIProvider } from "./registry";
-import { DRAFT_STYLES, type BrandContext, type CheckedDraft, type DraftStyle, type PostDraft } from "./types";
+import { DRAFT_STYLES, type BrandContext, type CheckedDraft, type DraftStyle, type HistoryEntry, type PostDraft } from "./types";
 
 // 品質チェックで問題があった案を作り直す回数
 export const MAX_REGENERATIONS = 2;
@@ -30,8 +33,13 @@ function alignToStyles(drafts: PostDraft[], styles: DraftStyle[]): (PostDraft | 
 export async function generateDrafts(
   userId: string,
   input: { topic: string; objective?: string; brandId?: string | null; styles?: DraftStyle[] },
-): Promise<{ drafts: CheckedDraft[]; model: string; provider: string }> {
+): Promise<{ drafts: CheckedDraft[]; model: string; provider: string; historyCount: number }> {
   const brand = await loadBrand(userId, input.brandId);
+  // これまでの投稿（このアプリの投稿と、SNS から読み込んだ過去の投稿）
+  const history: HistoryEntry[] = (await loadPostHistory(userId, input.brandId)).map((h) => ({
+    label: `${slotLabel(h.date)} ${PLATFORM_LABELS[h.platform]}`,
+    text: h.text,
+  }));
   const styles = input.styles && input.styles.length > 0 ? input.styles : [...DRAFT_STYLES];
   const provider = getAIProvider();
 
@@ -43,7 +51,14 @@ export async function generateDrafts(
 
   for (let attempt = 0; attempt <= MAX_REGENERATIONS && pending.length > 0; attempt++) {
     const requestStyles = pending.map((i) => styles[i]);
-    const generated = await provider.generate({ topic: input.topic, objective: input.objective, brand, styles: requestStyles, feedback });
+    const generated = await provider.generate({
+      topic: input.topic,
+      objective: input.objective,
+      brand,
+      styles: requestStyles,
+      history,
+      feedback,
+    });
     model = generated.model;
     logger.info("ai.generate", {
       userId,
@@ -68,7 +83,7 @@ export async function generateDrafts(
         return;
       }
       filledIndex++;
-      const errors = [...checkDraft(draft, brand).errors];
+      const errors = [...checkDraft(draft, brand).errors, ...findSimilarPast(draft, history)];
       if (dup.has(filledIndex)) errors.push("他の案とXの文章が同じです。別の切り口にしてください");
       if (errors.length > 0) lastErrors.set(i, errors);
     });
@@ -83,5 +98,5 @@ export async function generateDrafts(
     drafts.push({ ...draft, id: randomUUID(), errors: lastErrors.get(i) ?? [], warnings });
   });
   if (drafts.length === 0) throw new AIError("INVALID_OUTPUT", "no drafts");
-  return { drafts, model, provider: provider.name };
+  return { drafts, model, provider: provider.name, historyCount: history.length };
 }

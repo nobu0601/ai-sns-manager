@@ -1,6 +1,8 @@
 import type { AgentConfig, AgentRunTrigger, Platform } from "@prisma/client";
 import { prisma } from "@/lib/database/prisma";
 import { generateDrafts } from "@/lib/ai/ai-service";
+import { loadPostHistory } from "@/lib/ai/history";
+import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
 import { AIError } from "@/lib/ai/errors";
 import { draftTexts } from "@/lib/ai/quality";
 import { getAIProvider } from "@/lib/ai/registry";
@@ -160,6 +162,11 @@ export async function executeAgentRun(runId: string, now: Date = new Date()): Pr
       }
     }
     const insights = await insightsForPlan(run.userId, brand.id, now);
+    // これまでの投稿の本文（SNS から読み込んだ過去の投稿を含む）。テーマを重ねないために渡す
+    const pastPosts = (await loadPostHistory(run.userId, brand.id)).map((h) => ({
+      label: `${slotLabel(h.date)} ${PLATFORM_LABELS[h.platform]}`,
+      text: h.text,
+    }));
 
     // 4. テーマの計画（ルール違反があれば指摘して作り直させる）
     const ai = getAIProvider();
@@ -170,6 +177,7 @@ export async function executeAgentRun(runId: string, now: Date = new Date()): Pr
         brand,
         slots: slots.map((d, i) => ({ index: i, label: slotLabel(d) })),
         history,
+        pastPosts,
         insights,
         feedback,
       });

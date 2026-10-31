@@ -36,8 +36,16 @@ export interface BrandContext {
   contentPillars: string[];
 }
 
+// AI に渡す「これまでの投稿」（新しい順）
+export interface HistoryEntry {
+  label: string; // 例：10/27(月) Threads
+  text: string;
+}
+
 export interface GenerateRequest {
   topic: string;
+  // これまでの投稿。内容を重ねず、流れを踏まえるために使う
+  history?: HistoryEntry[];
   objective?: string;
   brand: BrandContext | null;
   styles: DraftStyle[];
@@ -83,6 +91,8 @@ export interface PlanRequest {
   brand: BrandContext;
   slots: PlanSlot[];
   history: PlanHistoryItem[];
+  // SNS にある過去の投稿を含む、これまでの投稿の本文（テーマを重ねないため）
+  pastPosts?: HistoryEntry[];
   // 最新の分析（あれば）。テーマ選びの参考にする。投稿日時は変えない
   insights?: PlanInsights | null;
   feedback?: string[];

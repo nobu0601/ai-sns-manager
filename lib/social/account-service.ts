@@ -4,6 +4,7 @@ import { decrypt, encrypt } from "@/lib/encryption/crypto";
 import { PLATFORM_LABELS, userMessageFor } from "@/lib/errors/user-messages";
 import { ServiceError, notFound } from "@/lib/errors/service-error";
 import { logger } from "@/lib/logging/logger";
+import { getJobDispatcher } from "@/lib/queue/jobs";
 import { CREDENTIAL_FIELDS, credentialHint, credentialMistakeHint } from "./credential-fields";
 import { SocialPublishError, apiErrorSummary, toSocialError } from "./errors";
 import { getAdapter, isMockMode } from "./registry";
@@ -139,7 +140,17 @@ export async function connectAccount(
     update: data,
   });
   logger.info("social.connect.success", { userId, platform, accountId: account.id });
+  await requestInitialSync(userId);
   return toView(account);
+}
+
+// 連携した直後に、過去の投稿と数値の読み込みを Worker に頼む（失敗しても連携は成功のまま。6時間ごとにも読み込む）
+async function requestInitialSync(userId: string): Promise<void> {
+  try {
+    await getJobDispatcher().enqueueMetricsRefresh(userId);
+  } catch (err) {
+    logger.warn("social.initial_sync_enqueue_failed", { userId, error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 // ラベル・ブランドの変更、キーの差し替え（再認証）
@@ -173,6 +184,7 @@ export async function updateAccount(
       ...(input.brandId !== undefined ? { brandId: input.brandId || null } : {}),
     },
   });
+  if (input.credentials) await requestInitialSync(userId);
   return toView(updated);
 }
 

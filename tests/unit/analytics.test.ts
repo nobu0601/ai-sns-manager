@@ -335,3 +335,40 @@ describe("Mock の分析", () => {
     await expect(x.fetchFollowerCount(keys, account)).rejects.toMatchObject({ kind: "PERMISSION" });
   });
 });
+
+describe("過去の投稿の読み込み", () => {
+  it("Threads：GET me/threads?fields=id,text,timestamp,permalink。本文が無い投稿（画像だけ等）は除く", async () => {
+    const { impl, calls } = fakeFetch([
+      {
+        body: {
+          data: [
+            { id: "t1", text: "雨の日の過ごし方", timestamp: "2026-10-20T03:00:00+0000", permalink: "https://www.threads.com/@a/post/1" },
+            { id: "t2", timestamp: "2026-10-19T03:00:00+0000" },
+          ],
+        },
+      },
+    ]);
+    const posts = await adapter(new ThreadsAdapter(impl)).fetchRecentPosts({ accessToken: "tok" }, account, 30);
+    const url = new URL(calls[0].url);
+    expect(url.pathname).toBe("/me/threads");
+    expect(url.searchParams.get("fields")).toBe("id,text,timestamp,permalink");
+    expect(url.searchParams.get("limit")).toBe("30");
+    expect(posts).toEqual([
+      { externalPostId: "t1", text: "雨の日の過ごし方", publishedAt: new Date("2026-10-20T03:00:00Z"), permalink: "https://www.threads.com/@a/post/1" },
+    ]);
+  });
+
+  it("Instagram：本文（caption）を取得できないときは空として扱い、エラーにしない", async () => {
+    const ok = fakeFetch([{ body: { data: [{ id: "m1", caption: "新しい席のご紹介", timestamp: "2026-10-18T01:00:00+0000" }] } }]);
+    expect(await adapter(new InstagramAdapter(ok.impl)).fetchRecentPosts({ accessToken: "tok" }, account, 10)).toHaveLength(1);
+    expect(new URL(ok.calls[0].url).searchParams.get("fields")).toBe("id,caption,timestamp,permalink");
+    const ng = fakeFetch([{ status: 400, body: { error: { code: 100, message: "Tried accessing nonexisting field (caption)" } } }]);
+    expect(await adapter(new InstagramAdapter(ng.impl)).fetchRecentPosts({ accessToken: "tok" }, account, 10)).toEqual([]);
+  });
+
+  it("X は読み込まない（読み取りが有料のため）", async () => {
+    const { impl, calls } = fakeFetch([]);
+    expect(await adapter(new XAdapter(impl)).fetchRecentPosts(xKeys, account, 10)).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+});

@@ -78,6 +78,14 @@ export interface MetricsTarget {
 // 投稿ごとの取得結果。投稿が削除されているなど、個別に取れなかったものは error に理由を入れる
 export type PostMetricsResult = Map<string, PostMetricValues | { error: string }>;
 
+// SNS 上にある、そのアカウントの過去の投稿（AI が内容を重ねないために読む）
+export interface RecentPost {
+  externalPostId: string;
+  text: string;
+  publishedAt: Date;
+  permalink?: string | null;
+}
+
 // 各SNSは必ずこのインターフェースを実装する。新しいSNSの追加もこれを実装するだけでよい。
 export interface SocialPlatformAdapter {
   readonly platform: Platform;
@@ -95,4 +103,7 @@ export interface SocialPlatformAdapter {
 
   // 分析：現在のフォロワー数
   fetchFollowerCount(credentials: PlatformCredentials, account: VerifiedAccount): Promise<number>;
+
+  // 過去の投稿（新しい順・最大 limit 件）。本文を取得できない SNS は空の配列を返す
+  fetchRecentPosts(credentials: PlatformCredentials, account: VerifiedAccount, limit: number): Promise<RecentPost[]>;
 }

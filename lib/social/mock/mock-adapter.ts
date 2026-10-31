@@ -8,6 +8,7 @@ import type {
   PlatformCredentials,
   PlatformPost,
   PostMetricsResult,
+  RecentPost,
   PublishedPost,
   SocialPlatformAdapter,
   ValidationResult,
@@ -104,6 +105,16 @@ export class MockSocialAdapter implements SocialPlatformAdapter {
     // 日ごとに少しずつ増える架空のフォロワー数
     const days = Math.floor(Date.now() / 86_400_000);
     return 500 + Math.round(seeded(account.externalAccountId, "followers") * 2000) + (days % 365) * 2;
+  }
+
+  // SNS にある過去の投稿（架空）。アカウントごとに決まった2件を返す
+  async fetchRecentPosts(_credentials: PlatformCredentials, account: VerifiedAccount, limit: number): Promise<RecentPost[]> {
+    const day = 86_400_000;
+    const base = Date.UTC(2026, 9, 1);
+    return [
+      { externalPostId: `${account.externalAccountId}-past-1`, text: "（Mock）以前の投稿：雨の日でも静かに作業できる場所をご紹介しました。", publishedAt: new Date(base - day), permalink: null },
+      { externalPostId: `${account.externalAccountId}-past-2`, text: "（Mock）以前の投稿：ドリンク飲み放題で、長時間の作業も快適です。", publishedAt: new Date(base - 3 * day), permalink: null },
+    ].slice(0, limit);
   }
 
   async validatePost(post: PlatformPost): Promise<ValidationResult> {

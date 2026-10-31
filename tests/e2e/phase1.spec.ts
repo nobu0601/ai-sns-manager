@@ -83,7 +83,11 @@ test("APIキーで複数アカウントを連携し、投稿・予約まで一�
   await expect(page.getByText("投稿を予約しました", { exact: true })).toBeVisible();
   await expect(page.getByText("予約済み").first()).toBeVisible();
 
-  await go(page, "/calendar");
+  // 予約の初期値は1時間後。月末の深夜は翌月になるため、その月のカレンダーを開く
+  const scheduledMonth = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit" }).format(
+    new Date(Date.now() + 60 * 60 * 1000),
+  );
+  await go(page, `/calendar?month=${scheduledMonth}`);
   await expect(page.getByRole("link", { name: /E2E 予約投稿/ })).toBeVisible();
 
   // AI で5案を生成（APIキー未設定のため AI は Mock）→ 1案削除 → 再生成 → 採用 → 予約

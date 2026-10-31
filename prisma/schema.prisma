@@ -185,6 +185,7 @@ model SocialAccount {
   brand          Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
   postPlatforms  PostPlatform[]
   accountMetrics AccountMetric[]
+  externalPosts  ExternalPost[]
 
   @@unique([userId, platform, externalAccountId])
   @@index([userId, platform])
@@ -400,4 +401,22 @@ model AnalysisReport {
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([userId, brandId, createdAt])
+}
+
+// SNS から読み込んだ、そのアカウントの過去の投稿（このアプリ以外から投稿したものを含む）。
+// AI が過去の投稿と内容を重ねないため・流れを踏まえるために使う。このアプリから投稿したものは PostPlatform にあるため保存しない
+model ExternalPost {
+  id              String   @id @default(cuid())
+  socialAccountId String
+  platform        Platform
+  externalPostId  String
+  text            String
+  permalink       String?
+  publishedAt     DateTime
+  fetchedAt       DateTime @default(now())
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, externalPostId])
+  @@index([socialAccountId, publishedAt])
 }

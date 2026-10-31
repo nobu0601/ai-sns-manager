@@ -1,7 +1,7 @@
 import { PLATFORM_CAPABILITIES } from "../capabilities";
 import { SocialPublishError } from "../errors";
 import type { FetchLike } from "../http";
-import { GraphClient, collectPerPost, withVersion } from "../meta/graph";
+import { GraphClient, collectPerPost, toRecentPosts, withVersion } from "../meta/graph";
 import { primaryMedia } from "../media";
 import { readInsights, toMetricValues } from "../metrics/values";
 import { validateAgainstCapabilities } from "../validate";
@@ -10,6 +10,7 @@ import type {
   PlatformCredentials,
   PlatformPost,
   PostMetricsResult,
+  RecentPost,
   PublishedPost,
   SocialPlatformAdapter,
   TokenCredentials,
@@ -25,6 +26,7 @@ import type {
 //   分析（権限 threads_manage_insights が必要）：
 //     投稿 GET {id}/insights?metric=views,likes,replies,reposts,quotes,shares → data[].values[0].value
 //     フォロワー数 GET me/threads_insights?metric=followers_count → data[].total_value.value
+//   過去の投稿 GET me/threads?fields=id,text,timestamp,permalink&limit=… → data[]（公式サンプルの /threads と同じ）
 const POST_METRICS = "views,likes,replies,reposts,quotes,shares";
 type WaitOptions = Parameters<GraphClient["waitForContainer"]>[2];
 const VIDEO_WAIT = { attempts: 60, intervalMs: 5000 };
@@ -95,6 +97,14 @@ export class ThreadsAdapter implements SocialPlatformAdapter {
     const raw = readInsights(await this.client(credentials).get("me/threads_insights", { metric: "followers_count" }));
     if (typeof raw.followers_count !== "number") throw new SocialPublishError("UNKNOWN", "THREADS", "no followers_count");
     return raw.followers_count;
+  }
+
+  async fetchRecentPosts(credentials: PlatformCredentials, _account: VerifiedAccount, limit: number): Promise<RecentPost[]> {
+    const res = await this.client(credentials).get<{ data?: { id?: string; text?: string; timestamp?: string; permalink?: string }[] }>(
+      "me/threads",
+      { fields: "id,text,timestamp,permalink", limit: String(limit) },
+    );
+    return toRecentPosts((res.data ?? []).map((p) => ({ id: p.id, text: p.text, timestamp: p.timestamp, permalink: p.permalink })));
   }
 
   async validatePost(post: PlatformPost): Promise<ValidationResult> {

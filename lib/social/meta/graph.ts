@@ -1,6 +1,6 @@
 import type { Platform } from "@prisma/client";
 import { SocialPublishError } from "../errors";
-import type { MetricsTarget, PostMetricValues, PostMetricsResult } from "../types";
+import type { MetricsTarget, PostMetricValues, PostMetricsResult, RecentPost } from "../types";
 import { callApi, type FetchLike } from "../http";
 
 // Meta Graph API（Threads / Instagram）の共通処理。
@@ -76,4 +76,11 @@ export async function collectPerPost(
     }
   }
   return result;
+}
+
+// Meta の投稿一覧を RecentPost にする。本文・日時が無いものは除く
+export function toRecentPosts(items: { id?: string; text?: string; timestamp?: string; permalink?: string }[]): RecentPost[] {
+  return items
+    .filter((p) => p.id && p.text?.trim() && p.timestamp && !Number.isNaN(new Date(p.timestamp).getTime()))
+    .map((p) => ({ externalPostId: p.id!, text: p.text!.trim(), publishedAt: new Date(p.timestamp!), permalink: p.permalink ?? null }));
 }

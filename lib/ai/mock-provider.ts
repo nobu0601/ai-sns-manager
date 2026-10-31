@@ -17,6 +17,21 @@ import {
 // テーマに「#mock-prohibited」を含めると、禁止ワード入りの案を返す（品質チェックと作り直しの確認用）
 export const MOCK_AI_PROHIBITED_TRIGGER = "#mock-prohibited";
 
+const MOCK_FILLERS = [
+  {
+    x: "仕事の合間にひと息つきたいとき、静かな席で自分のペースを取り戻してみませんか。",
+    instagram:
+      "忙しい毎日の中で、少しだけ立ち止まれる時間をつくりたい。そんな気持ちに寄り添える場所でありたいと考えています。\n\n静かな席で集中したい日も、ゆっくり考えごとをしたい日も、自分のペースで過ごしてください。ドリンクを片手に、気持ちを切り替えるひとときをどうぞ。",
+    threads: "ちょっとした気分転換のコツがあれば、ぜひ教えてください。",
+  },
+  {
+    x: "予定のすき間に、気持ちを整える小さな寄り道はいかがですか。ゆっくりどうぞ。",
+    instagram:
+      "今日はいつもと少し違う視点でお届けします。予定と予定のあいだにできた、ほんの少しの空き時間。その使い方ひとつで、一日の印象は変わるものです。\n\n落ち着いた空間で、読みかけの本を開いたり、明日の段取りを考えたり。自分だけの小さな寄り道を楽しんでください。",
+    threads: "最近うれしかった小さな寄り道、よかったら聞かせてください。",
+  },
+];
+
 export class MockAIProvider implements AIProvider {
   readonly name = "mock";
   calls: GenerateRequest[] = [];
@@ -29,6 +44,11 @@ export class MockAIProvider implements AIProvider {
     const banned =
       request.topic.includes(MOCK_AI_PROHIBITED_TRIGGER) && !request.feedback?.length ? request.brand?.prohibitedWords[0] : undefined;
 
+    // 作り直しで「過去の投稿と似すぎ」と言われたら、別の言い回しにする
+    const variant = request.feedback?.some((f) => f.issues.some((x) => x.includes("似すぎ"))) ? 1 : 0;
+    const fill = MOCK_FILLERS[variant];
+
+    // 文字数は各SNSの目安（quality.ts の RECOMMENDED_LENGTH）に収まる長さにしている
     const drafts: PostDraft[] = request.styles.map((style, i) => {
       const label = DRAFT_STYLE_LABELS[style];
       const extra = banned && i === 0 ? `${banned}な` : "";
@@ -36,12 +56,12 @@ export class MockAIProvider implements AIProvider {
         style,
         title: `${topic}（${label}）`,
         summary: `${label}で「${topic}」を伝える案`,
-        x: { text: `【${label}】${brand}の${extra}「${topic}」。ふらっと立ち寄ってみませんか。` },
+        x: { text: `【${label}】${brand}の${extra}「${topic}」。${fill.x}` },
         instagram: {
-          caption: `${brand}より、${topic}のお知らせです。\n\n${label}の案 ${i + 1}。\nくわしくはプロフィールのリンクから。`,
+          caption: `${brand}より、${topic}のお知らせです。\n\n${label}の案 ${i + 1}。\n${fill.instagram}\n\nくわしくはプロフィールのリンクから。`,
           hashtags: ["#大阪", `#${brand.replace(/[^\p{L}\p{N}_]/gu, "")}`],
         },
-        threads: { text: `${topic}、みなさんはどう過ごしていますか？（${label}）` },
+        threads: { text: `${topic}、みなさんはどう過ごしていますか？（${label}）${fill.threads}` },
       };
     });
     return { drafts, model: "mock", usage: { inputTokens: 0, outputTokens: 0 } };

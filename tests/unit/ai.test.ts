@@ -27,9 +27,13 @@ const draft = (over: Partial<PostDraft> = {}): PostDraft => ({
   style: "story",
   title: "t",
   summary: "s",
-  x: { text: "週末は読書の時間に。" },
-  instagram: { caption: "本文です", hashtags: ["#大阪", "#カフェ"] },
-  threads: { text: "みなさんは週末どう過ごしますか？" },
+  x: { text: "週末は読書の時間に。静かな席でページをめくると、平日の疲れが少しずつほどけていきます。ゆっくりどうぞ。" },
+  instagram: {
+    caption:
+      "週末は読書の時間に。\n\n静かな席でページをめくると、平日の疲れが少しずつほどけていきます。好きな飲み物を片手に、読みかけの一冊を開いてみませんか。\n\n窓の外の光が変わっていくのを感じながら、自分のペースで過ごす時間。そんなひとときを大切にしてほしいと思っています。\n\nくわしくはプロフィールのリンクから。",
+    hashtags: ["#大阪", "#カフェ"],
+  },
+  threads: { text: "みなさんは週末どう過ごしますか？最近は静かな場所で本を読むのが楽しみになっています。おすすめの一冊があれば、ぜひ教えてください。" },
   ...over,
 });
 
@@ -79,7 +83,7 @@ describe("投稿案の品質チェック", () => {
 
   it("Instagram はキャプションの後にハッシュタグを付ける。# がなければ補う", () => {
     expect(instagramContent(draft({ instagram: { caption: "本文", hashtags: ["大阪", "#カフェ"] } }))).toBe("本文\n\n#大阪 #カフェ");
-    expect(draftTexts(draft()).X).toBe("週末は読書の時間に。");
+    expect(draftTexts(draft()).X).toBe(draft().x.text);
   });
 
   it("X の文章が同じ案を重複として見つける", () => {
@@ -200,5 +204,47 @@ describe("MockAIProvider", () => {
     const result = await new MockAIProvider().generate({ topic: "週末", brand, styles: [...DRAFT_STYLES] });
     expect(result.drafts.map((d) => d.style)).toEqual([...DRAFT_STYLES]);
     for (const d of result.drafts) expect(checkDraft(d, brand).errors).toEqual([]);
+  });
+});
+
+describe("投稿の長さと、過去の投稿との重複", async () => {
+  const { lengthIssue, similarity, findSimilarPast, RECOMMENDED_LENGTH } = await import("@/lib/ai/quality");
+
+  it("SNSごとの目安より短い・長い文章は作り直しの対象", () => {
+    expect(lengthIssue(draft(), "X")).toBeNull();
+    expect(lengthIssue(draft({ x: { text: "短い" } }), "X")).toContain("短すぎ");
+    expect(lengthIssue(draft({ threads: { text: "あ".repeat(RECOMMENDED_LENGTH.THREADS.max + 1) } }), "THREADS")).toContain("長すぎ");
+    // Instagram はハッシュタグを除いた本文で数える
+    expect(lengthIssue(draft({ instagram: { caption: "短い本文", hashtags: Array(20).fill("#長いハッシュタグです") } }), "INSTAGRAM")).toContain("短すぎ");
+    expect(checkDraft(draft({ x: { text: "短い" } }), brand).errors.join()).toContain("Xの文章が短すぎます");
+  });
+
+  it("文章の似ている度合い：同じ文章は1、違う話題は低い（記号・空白・ハッシュタグは無視）", () => {
+    expect(similarity("週末は読書の時間に。", "週末は 読書の時間に！ #大阪")).toBe(1);
+    expect(similarity("週末は読書の時間に。静かな席で過ごしましょう", "新メニューのホットチョコレートが始まりました")).toBeLessThan(0.3);
+  });
+
+  it("過去の投稿と似すぎている案を見つける（短い文章どうしは比べない）", () => {
+    const past = [{ label: "10/20(火) Threads", text: draft().threads.text }];
+    const issues = findSimilarPast(draft(), past);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("Threadsの文章が、過去の投稿（10/20(火) Threads）と似すぎています");
+    expect(findSimilarPast(draft(), [{ label: "x", text: "ありがとう" }])).toEqual([]);
+    expect(findSimilarPast(draft(), [{ label: "x", text: "新メニューのホットチョコレートが始まりました。寒い日にぴったりの一杯です" }])).toEqual([]);
+  });
+});
+
+describe("これまでの投稿をAIに渡す", async () => {
+  const { userPrompt, planUserPrompt } = await import("@/lib/ai/prompts");
+  it("投稿案の依頼に、これまでの投稿（新しい順）を入れる", () => {
+    const text = userPrompt({ topic: "週末", brand, styles: ["story"], history: [{ label: "10/20(火) Threads", text: "雨の日の過ごし方" }] });
+    expect(text).toContain("# これまでの投稿");
+    expect(text).toContain("- 10/20(火) Threads：雨の日の過ごし方");
+    expect(userPrompt({ topic: "週末", brand, styles: ["story"] })).not.toContain("これまでの投稿");
+  });
+  it("AI エージェントの計画にも、SNS にある過去の投稿の本文を入れる", () => {
+    const text = planUserPrompt({ brand, slots: [{ index: 0, label: "10/26(月) 12:00" }], history: [], pastPosts: [{ label: "10/20(火) Instagram", text: "新しい席のご紹介" }] });
+    expect(text).toContain("SNS にある過去の投稿を含む");
+    expect(text).toContain("新しい席のご紹介");
   });
 });

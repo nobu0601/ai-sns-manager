@@ -6,6 +6,7 @@ import {
   type AnalysisRequest,
   type BrandContext,
   type GenerateRequest,
+  type HistoryEntry,
   type MediaPromptRequest,
   type PlanRequest,
 } from "./types";
@@ -62,6 +63,8 @@ export function userPrompt(request: GenerateRequest): string {
     `- テーマ：${request.topic.trim() || "（指定なし。ブランドの投稿テーマの柱から選んでください）"}`,
     ...(request.objective?.trim() ? [`- 今回の目的：${request.objective.trim()}`] : []),
     "",
+    ...historySection(request.history, "# これまでの投稿（新しい順。内容・切り口・言い回しを重ねず、流れを踏まえてください）"),
+    "",
     `次の型で、投稿案を ${request.styles.length} 案作ってください（この順番で、各型1案ずつ）：${styles}`,
   ];
   if (request.feedback && request.feedback.length > 0) {
@@ -72,6 +75,16 @@ export function userPrompt(request: GenerateRequest): string {
     );
   }
   return parts.join("\n");
+}
+
+// これまでの投稿（本文は長いので先頭だけ）
+export function historySection(history: HistoryEntry[] | undefined, title: string): string[] {
+  if (!history || history.length === 0) return [];
+  return [
+    "",
+    title,
+    ...history.map((h) => `- ${h.label}：${h.text.replace(/\s+/g, " ").slice(0, 160)}`),
+  ];
 }
 
 export function mediaUserPrompt(request: MediaPromptRequest): string {
@@ -92,6 +105,7 @@ export function planUserPrompt(request: PlanRequest): string {
     brandSection(request.brand),
     "# 最近の投稿（新しい順）",
     history,
+    ...historySection(request.pastPosts, "# これまでの投稿の本文（SNS にある過去の投稿を含む。同じテーマを繰り返さず、流れの続きになるテーマを選んでください）"),
     "# 今回の投稿枠（日時は変更しない）",
     ...request.slots.map((s) => `- slotIndex ${s.index}：${s.label}`),
     "",

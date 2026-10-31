@@ -29,6 +29,66 @@ export function findProhibitedWords(text: string, words: string[]): string[] {
   return words.filter((w) => w.trim() && normalized.includes(w.normalize("NFKC").toLowerCase()));
 }
 
+// 投稿にちょうどよい長さ（文字数。Instagram はハッシュタグを除いた本文）。
+// 上限（capabilities.maxTextLength）とは別の「読みやすさの目安」。外れたら作り直す
+export const RECOMMENDED_LENGTH: Record<Platform, { min: number; max: number }> = {
+  X: { min: 50, max: 130 },
+  INSTAGRAM: { min: 150, max: 700 },
+  THREADS: { min: 50, max: 250 },
+};
+
+// 目安と比べる本文（Instagram はハッシュタグを除く）
+function bodyText(draft: PostDraft, platform: Platform): string {
+  if (platform === "INSTAGRAM") return draft.instagram.caption.trim();
+  return (platform === "X" ? draft.x.text : draft.threads.text).replace(HASHTAG_PATTERN, "").trim();
+}
+
+export function lengthIssue(draft: PostDraft, platform: Platform): string | null {
+  const length = [...bodyText(draft, platform)].length;
+  const { min, max } = RECOMMENDED_LENGTH[platform];
+  if (length < min) return `${LABEL[platform]}の文章が短すぎます（${length}字。${min}〜${max}字にしてください）`;
+  if (length > max) return `${LABEL[platform]}の文章が長すぎます（${length}字。${min}〜${max}字にしてください）`;
+  return null;
+}
+
+// 文章の似ている度合い（0〜1）。日本語でも使えるよう、2文字ずつの組み合わせの重なりで比べる
+function bigrams(text: string): Set<string> {
+  const t = text.normalize("NFKC").toLowerCase().replace(HASHTAG_PATTERN, "").replace(/[\s\p{P}\p{S}]/gu, "");
+  const set = new Set<string>();
+  for (let i = 0; i < t.length - 1; i++) set.add(t.slice(i, i + 2));
+  return set;
+}
+
+export function similarity(a: string, b: string): number {
+  const x = bigrams(a);
+  const y = bigrams(b);
+  if (x.size === 0 || y.size === 0) return 0;
+  let common = 0;
+  for (const g of x) if (y.has(g)) common++;
+  return common / Math.min(x.size, y.size);
+}
+
+// これ以上似ていたら「過去の投稿と被っている」とみなして作り直す
+export const SIMILARITY_THRESHOLD = 0.6;
+// 短すぎる文章は比べない（定型のあいさつなどで誤判定しないため）
+const MIN_COMPARE_LENGTH = 20;
+
+// 過去の投稿と似すぎている文章を探す
+export function findSimilarPast(
+  draft: PostDraft,
+  history: { text: string; label: string }[],
+): string[] {
+  const issues: string[] = [];
+  const texts = draftTexts(draft);
+  for (const platform of Object.keys(texts) as Platform[]) {
+    const body = bodyText(draft, platform);
+    if ([...body].length < MIN_COMPARE_LENGTH) continue;
+    const hit = history.find((h) => [...h.text].length >= MIN_COMPARE_LENGTH && similarity(body, h.text) >= SIMILARITY_THRESHOLD);
+    if (hit) issues.push(`${LABEL[platform]}の文章が、過去の投稿（${hit.label}）と似すぎています。テーマや切り口、言い回しを変えてください`);
+  }
+  return issues;
+}
+
 // 1案の品質チェック。errors は作り直しの対象、warnings は画面で注意を促すだけ
 export function checkDraft(draft: PostDraft, brand: BrandContext | null): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
@@ -46,6 +106,9 @@ export function checkDraft(draft: PostDraft, brand: BrandContext | null): { erro
     const length = platformTextLength(text, caps);
     if (caps.maxTextLength !== null && length > caps.maxTextLength) {
       errors.push(`${name}の文章が長すぎます（${length}/${caps.maxTextLength}文字）`);
+    } else {
+      const issue = lengthIssue(draft, platform);
+      if (issue) errors.push(issue);
     }
     if (URL_PATTERN.test(text)) warnings.push(`${name}の文章にURLが含まれています。リンク先が正しいか確認してください`);
     const tagCount = platform === "INSTAGRAM" ? draft.instagram.hashtags.length : (text.match(HASHTAG_PATTERN) ?? []).length;
