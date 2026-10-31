@@ -34,3 +34,16 @@ export function toSocialError(err: unknown, platform: Platform): SocialPublishEr
   const message = err instanceof Error ? err.message : String(err);
   return new SocialPublishError("UNKNOWN", platform, message, err);
 }
+
+// SNS API のエラー応答から、原因の調査に使う項目だけを取り出す（ログ用。トークンは含まれない項目のみ）
+// Meta: {error: {message, type, code, error_subcode}} / X: {title, detail, type}
+export function apiErrorSummary(detail: unknown): Record<string, unknown> | undefined {
+  if (!detail || typeof detail !== "object") return undefined;
+  const body = detail as { error?: Record<string, unknown>; title?: unknown; detail?: unknown; type?: unknown };
+  if (body.error && typeof body.error === "object") {
+    const { message, type, code, error_subcode } = body.error;
+    return { message, type, code, error_subcode };
+  }
+  if (body.title || body.detail) return { title: body.title, detail: body.detail, type: body.type };
+  return undefined;
+}

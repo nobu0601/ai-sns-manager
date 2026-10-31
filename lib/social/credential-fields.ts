@@ -23,3 +23,16 @@ export function credentialHint(value: string): string {
   const v = value.trim();
   return v.length <= 4 ? "••••" : `••••${v.slice(-4)}`;
 }
+
+// よくある入れ間違いの案内（キーの形式だけを見る。値そのものはログや画面に出さない）
+const MISTAKE_HINTS: Partial<Record<Platform, (c: Record<string, string>) => string | null>> = {
+  // Facebook ログインのトークン（EAA で始まる）は graph.instagram.com では使えない
+  INSTAGRAM: (c) =>
+    c.accessToken?.trim().startsWith("EAA")
+      ? "入力されたのは Facebook ログイン用のトークンのようです。Meta のアプリの「Instagram」→「API setup with Instagram business login」で「Generate token」を押して発行したトークン（通常 IG で始まります）を入れてください。"
+      : null,
+};
+
+export function credentialMistakeHint(platform: Platform, credentials: Record<string, string>): string | null {
+  return MISTAKE_HINTS[platform]?.(credentials) ?? null;
+}

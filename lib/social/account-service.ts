@@ -4,8 +4,8 @@ import { decrypt, encrypt } from "@/lib/encryption/crypto";
 import { PLATFORM_LABELS, userMessageFor } from "@/lib/errors/user-messages";
 import { ServiceError, notFound } from "@/lib/errors/service-error";
 import { logger } from "@/lib/logging/logger";
-import { CREDENTIAL_FIELDS, credentialHint } from "./credential-fields";
-import { SocialPublishError, toSocialError } from "./errors";
+import { CREDENTIAL_FIELDS, credentialHint, credentialMistakeHint } from "./credential-fields";
+import { SocialPublishError, apiErrorSummary, toSocialError } from "./errors";
 import { getAdapter, isMockMode } from "./registry";
 import type { PlatformCredentials, VerifiedAccount } from "./types";
 
@@ -72,9 +72,11 @@ async function verify(platform: Platform, credentials: PlatformCredentials): Pro
     return await getAdapter(platform).verifyCredentials(credentials);
   } catch (err) {
     const e = toSocialError(err, platform);
-    logger.warn("social.verify.failed", { platform, kind: e.kind, error: e.message });
-    const message =
-      e.kind === "AUTH" || e.kind === "PERMISSION"
+    logger.warn("social.verify.failed", { platform, kind: e.kind, error: e.message, api: apiErrorSummary(e.detail) });
+    const hint = credentialMistakeHint(platform, credentials as Record<string, string>);
+    const message = hint
+      ? hint
+      : e.kind === "AUTH" || e.kind === "PERMISSION"
         ? `${PLATFORM_LABELS[platform]}のキーを確認できませんでした。値に誤りがないか、投稿の権限があるかを確認してください。`
         : userMessageFor(e.kind, platform);
     throw new ServiceError(400, message, "INVALID_CREDENTIALS");

@@ -202,3 +202,23 @@ describe("HTTPエラーの分類", () => {
     expect(classifyHttpError(400, { error: { code: 100 } })).toBe("CONTENT");
   });
 });
+
+describe("キー確認の失敗の調査・案内", async () => {
+  const { apiErrorSummary } = await import("@/lib/social/errors");
+  const { credentialMistakeHint } = await import("@/lib/social/credential-fields");
+  it("SNS のエラー応答から原因の項目だけを取り出す", () => {
+    expect(apiErrorSummary({ error: { message: "Invalid OAuth access token", type: "OAuthException", code: 190, fbtrace_id: "x" } })).toEqual({
+      message: "Invalid OAuth access token",
+      type: "OAuthException",
+      code: 190,
+      error_subcode: undefined,
+    });
+    expect(apiErrorSummary({ title: "Unauthorized", detail: "Unauthorized", type: "about:blank" })).toMatchObject({ title: "Unauthorized" });
+    expect(apiErrorSummary("text")).toBeUndefined();
+  });
+  it("Instagram に Facebook ログインのトークンを入れたときは案内する", () => {
+    expect(credentialMistakeHint("INSTAGRAM", { accessToken: "EAAabc" })).toContain("Instagram business login");
+    expect(credentialMistakeHint("INSTAGRAM", { accessToken: "IGAAabc" })).toBeNull();
+    expect(credentialMistakeHint("THREADS", { accessToken: "EAAabc" })).toBeNull();
+  });
+});
