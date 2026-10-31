@@ -107,7 +107,17 @@ Threads と同じ Meta のアプリに Instagram のユースケースを追加�
 
 ![「アプリに人を追加」の画面。「Instagramテスター」を選び、ユーザーネームを入れて「追加」（画面の例では Threadsテスターが選ばれていますが、Instagram の場合は Instagramテスターを選びます）](../public/guides/instagram/02-tester.webp)
 
-### 3. アカウントを追加して、トークンを生成する
+![Instagram の 設定 →「アプリとウェブサイト」の「テスターへのご招待」タブ。作ったアプリ（名前の後ろに -IG）が表示される](../public/guides/instagram/02b-invite.webp)
+
+### 3. 投稿と分析の権限を確認する
+
+- 左メニューの「ユースケース」→ Instagram のユースケースの「カスタマイズ」→ ①「アクセス許可と機能」を開きます。
+- 一覧を下にスクロールし、次の3つのステータスが ②「テスト準備完了」になっているか確認します：instagram_business_basic（基本）、instagram_business_content_publish（投稿）、instagram_business_manage_insights（分析の数値）。
+- ③ まだのものは右の「追加」を押します。
+
+![Instagram API の「アクセス許可と機能」。必要な権限が「テスト準備完了」なら追加済み、無ければ「追加」](../public/guides/instagram/03-permissions.webp)
+
+### 4. アカウントを追加して、トークンを生成する
 
 - 左メニューの「ユースケース」→ Instagram のユースケースの「カスタマイズ」を押します。
 - ① 左の「API setup with Unified login」を開きます。
@@ -120,13 +130,13 @@ Threads と同じ Meta のアプリに Instagram のユースケースを追加�
 
 ![「トークンが生成されました」の画面。「理解しました」にチェック →「コピー」→「完了」](../public/guides/instagram/04-copy.webp)
 
-### 4. このアプリに貼り付ける
+### 5. このアプリに貼り付ける
 
 - この画面の Instagram の「＋ アカウントを追加」を押し、「アクセストークン」に貼って「連携する」を押します。
 
 **連携したあとの注意**
 
-- ダッシュボードで生成したトークンは60日有効です（Meta 公式ドキュメント）。期限が切れたら手順3でもう一度生成し、「キーを更新」で入れ直してください。
+- ダッシュボードで生成したトークンは60日有効です（Meta 公式ドキュメント）。期限が切れたら手順4でもう一度生成し、「キーを更新」で入れ直してください。
 - Instagram は画像か動画が無いと投稿できません。投稿作成画面で画像を付けてください。
 
 参考：[Meta 公式：Instagram 用の Meta アプリの作成](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/create-a-meta-app-with-instagram) / [Meta 公式：Get started（トークンの発行）](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/get-started)

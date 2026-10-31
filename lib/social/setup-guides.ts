@@ -186,6 +186,24 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
             src: "/guides/instagram/02-tester.webp",
             alt: "「アプリに人を追加」の画面。「Instagramテスター」を選び、ユーザーネームを入れて「追加」（画面の例では Threadsテスターが選ばれていますが、Instagram の場合は Instagramテスターを選びます）",
           },
+          {
+            src: "/guides/instagram/02b-invite.webp",
+            alt: "Instagram の 設定 →「アプリとウェブサイト」の「テスターへのご招待」タブ。作ったアプリ（名前の後ろに -IG）が表示される",
+          },
+        ],
+      },
+      {
+        title: "投稿と分析の権限を確認する",
+        body: [
+          "左メニューの「ユースケース」→ Instagram のユースケースの「カスタマイズ」→ ①「アクセス許可と機能」を開きます。",
+          "一覧を下にスクロールし、次の3つのステータスが ②「テスト準備完了」になっているか確認します：instagram_business_basic（基本）、instagram_business_content_publish（投稿）、instagram_business_manage_insights（分析の数値）。",
+          "③ まだのものは右の「追加」を押します。",
+        ],
+        images: [
+          {
+            src: "/guides/instagram/03-permissions.webp",
+            alt: "Instagram API の「アクセス許可と機能」。必要な権限が「テスト準備完了」なら追加済み、無ければ「追加」",
+          },
         ],
       },
       {
@@ -215,7 +233,7 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
       },
     ],
     after: [
-      "ダッシュボードで生成したトークンは60日有効です（Meta 公式ドキュメント）。期限が切れたら手順3でもう一度生成し、「キーを更新」で入れ直してください。",
+      "ダッシュボードで生成したトークンは60日有効です（Meta 公式ドキュメント）。期限が切れたら手順4でもう一度生成し、「キーを更新」で入れ直してください。",
       "Instagram は画像か動画が無いと投稿できません。投稿作成画面で画像を付けてください。",
     ],
     sources: [
