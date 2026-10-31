@@ -5,6 +5,7 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   X: "X",
   INSTAGRAM: "Instagram",
   THREADS: "Threads",
+  TIKTOK: "TikTok",
 };
 
 // 技術的なエラーをそのまま見せず、ユーザーが次に何をすればよいか分かる文にする。
@@ -39,6 +40,7 @@ const METRICS_PERMISSION_HINTS: Record<Platform, string> = {
     "Instagram の分析の権限（instagram_business_manage_insights）がありません。権限を付けたアクセストークンで、アカウント画面からキーを更新してください。",
   THREADS:
     "Threads の分析の権限（threads_manage_insights）がありません。権限を付けたアクセストークンで、アカウント画面からキーを更新してください。",
+  TIKTOK: "TikTok の数値の取得には、まだ対応していません。",
 };
 
 // 分析の数値を取得できなかったときの文

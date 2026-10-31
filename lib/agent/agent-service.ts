@@ -30,6 +30,12 @@ export type AgentConfigInput = {
   generateImages: boolean;
 };
 
+// AI エージェントの投稿先にできる SNS（画像か文章で投稿できるもの。動画が必須の TikTok は除く）
+export function agentSupports(platform: Platform): boolean {
+  const caps = PLATFORM_CAPABILITIES[platform];
+  return caps.textPost || caps.imagePost;
+}
+
 async function assertBrand(userId: string, brandId: string) {
   const brand = await prisma.brand.findFirst({ where: { id: brandId, userId } });
   if (!brand) throw notFound("ブランド");
@@ -43,8 +49,11 @@ export async function getAgentConfig(userId: string, brandId: string): Promise<A
 
 export async function saveAgentConfig(userId: string, brandId: string, input: AgentConfigInput): Promise<AgentConfig> {
   await assertBrand(userId, brandId);
-  const owned = await prisma.socialAccount.findMany({ where: { userId, id: { in: input.targetAccountIds } }, select: { id: true } });
+  const owned = await prisma.socialAccount.findMany({ where: { userId, id: { in: input.targetAccountIds } }, select: { id: true, platform: true } });
   if (owned.length !== input.targetAccountIds.length) throw notFound("投稿先のSNSアカウント");
+  if (owned.some((a) => !agentSupports(a.platform))) {
+    throw new ServiceError(400, "TikTok は AI エージェントの投稿先に選べません（動画が必須のため）。投稿作成画面から動画を付けて投稿してください。", "AGENT_UNSUPPORTED_PLATFORM");
+  }
 
   const config = await prisma.agentConfig.upsert({
     where: { brandId },
@@ -121,7 +130,7 @@ export async function executeAgentRun(runId: string, now: Date = new Date()): Pr
     ]);
     if (!config) return fail("AI エージェントの設定がありません");
     const postable = await listPostableAccounts(run.userId);
-    const targets = postable.filter((a) => config.targetAccountIds.includes(a.id));
+    const targets = postable.filter((a) => config.targetAccountIds.includes(a.id) && agentSupports(a.platform));
     if (targets.length === 0) return fail("投稿先のアカウントが接続されていません。SNSアカウント画面で確認してください。");
 
     // 1. 投稿履歴（最近30件）

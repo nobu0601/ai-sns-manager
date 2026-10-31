@@ -8,6 +8,7 @@ import { ApiError, apiFetch } from "@/lib/client/api";
 import { formatDateTime } from "@/lib/datetime";
 import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
 import { ACCOUNT_STATUS_LABELS } from "@/lib/labels";
+import { CREDENTIAL_FIELDS } from "@/lib/social/credential-fields";
 import { AccountKeyForm } from "./AccountKeyForm";
 import { SetupGuide } from "./SetupGuide";
 
@@ -38,6 +39,9 @@ export function AccountList({ platform, accounts, brands, mockMode }: Props) {
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const brandName = (id: string | null) => brands.find((b) => b.id === id)?.name;
+  // キーの入力欄が無い SNS（TikTok）は、SNS のログイン画面で許可して連携する
+  const oauthUrl = CREDENTIAL_FIELDS[platform].length === 0 ? `/api/social/${platform.toLowerCase()}/authorize` : null;
+  const oauthLabel = `${PLATFORM_LABELS[platform]}でログインして連携`;
 
   async function run(key: string, action: () => Promise<unknown>, success: string) {
     setPending(key);
@@ -61,8 +65,10 @@ export function AccountList({ platform, accounts, brands, mockMode }: Props) {
           {PLATFORM_LABELS[platform]}
           <span className="ml-2 text-sm font-normal text-slate-500">{accounts.length}アカウント</span>
         </h2>
-        {editing !== "new" && (
-          <button className={btn.small} onClick={() => setEditing("new")}>＋ アカウントを追加</button>
+        {oauthUrl ? (
+          <a className={btn.small} href={oauthUrl}>＋ {oauthLabel}</a>
+        ) : (
+          editing !== "new" && <button className={btn.small} onClick={() => setEditing("new")}>＋ アカウントを追加</button>
         )}
       </div>
 
@@ -81,7 +87,11 @@ export function AccountList({ platform, accounts, brands, mockMode }: Props) {
       )}
 
       {accounts.length === 0 ? (
-        editing !== "new" && <p className="text-sm text-slate-500">○ 未接続です。「アカウントを追加」からAPIキーを登録してください。</p>
+        editing !== "new" && (
+          <p className="text-sm text-slate-500">
+            {oauthUrl ? `○ 未接続です。「${oauthLabel}」を押してください。` : "○ 未接続です。「アカウントを追加」からAPIキーを登録してください。"}
+          </p>
+        )
       ) : (
         <ul className="divide-y divide-slate-100">
           {accounts.map((a) => {
@@ -112,9 +122,13 @@ export function AccountList({ platform, accounts, brands, mockMode }: Props) {
                     >
                       {pending === `verify-${a.id}` ? "確認中…" : "接続確認"}
                     </button>
-                    <button className={btn.small} disabled={pending !== null} onClick={() => setEditing(a.id)}>
-                      キーを更新
-                    </button>
+                    {oauthUrl ? (
+                      <a className={btn.small} href={oauthUrl}>再連携</a>
+                    ) : (
+                      <button className={btn.small} disabled={pending !== null} onClick={() => setEditing(a.id)}>
+                        キーを更新
+                      </button>
+                    )}
                     <button
                       className={`${btn.small} text-rose-700`}
                       disabled={pending !== null}

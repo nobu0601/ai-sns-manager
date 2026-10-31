@@ -17,7 +17,7 @@ import { MediaPicker, type SelectedMedia } from "./MediaPicker";
 import { inferMediaType } from "@/lib/social/media";
 import { validateAgainstCapabilities } from "@/lib/social/validate";
 
-const PLATFORM_ORDER: Platform[] = ["X", "INSTAGRAM", "THREADS"];
+const PLATFORM_ORDER: Platform[] = ["X", "INSTAGRAM", "THREADS", "TIKTOK"];
 
 export type PostFormAccount = { id: string; platform: Platform; accountName: string; label: string };
 

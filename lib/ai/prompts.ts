@@ -12,7 +12,7 @@ import {
 } from "./types";
 
 // プロンプトはコードに直書きせず prompts/ から読み込む（アプリはリポジトリのルートで起動する前提）
-const PROMPT_FILES = ["post-generation/system.md", "x/guidelines.md", "instagram/guidelines.md", "threads/guidelines.md"];
+const PROMPT_FILES = ["post-generation/system.md", "x/guidelines.md", "instagram/guidelines.md", "threads/guidelines.md", "tiktok/guidelines.md"];
 
 let cachedSystem: string | null = null;
 const cachedFiles = new Map<string, string>();

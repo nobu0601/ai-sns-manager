@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const platformSchema = z.enum(["X", "INSTAGRAM", "THREADS"]);
+export const platformSchema = z.enum(["X", "INSTAGRAM", "THREADS", "TIKTOK"]);
 
 // 投稿先（SNSアカウント）ごとの内容
 const targetSchema = z.object({

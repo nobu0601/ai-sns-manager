@@ -3,9 +3,9 @@ import { platformTextLength } from "@/lib/social/text-length";
 import type { Platform } from "@prisma/client";
 import type { BrandContext, PostDraft } from "./types";
 
-// ハッシュタグの目安。Instagram の 30 個は投稿の上限、それ以外は読みやすさのための目安（超えても警告のみ）
+// ハッシュタグの目安（どのSNSも5個程度）。外れても警告のみ。Instagram の 30 個は投稿の上限（エラー）
 const HASHTAG_LIMIT_INSTAGRAM = 30;
-const HASHTAG_GUIDE: Record<Platform, number> = { X: 2, INSTAGRAM: 15, THREADS: 1 };
+export const HASHTAG_RANGE = { min: 3, max: 7 };
 
 const URL_PATTERN = /https?:\/\/\S+|www\.\S+/i;
 const HASHTAG_PATTERN = /#[^\s#]+/g;
@@ -18,10 +18,10 @@ export function instagramContent(draft: PostDraft): string {
 
 // 案に含まれる、SNSごとの最終的な文章
 export function draftTexts(draft: PostDraft): Record<Platform, string> {
-  return { X: draft.x.text.trim(), INSTAGRAM: instagramContent(draft), THREADS: draft.threads.text.trim() };
+  return { X: draft.x.text.trim(), INSTAGRAM: instagramContent(draft), THREADS: draft.threads.text.trim(), TIKTOK: draft.tiktok.text.trim() };
 }
 
-const LABEL: Record<Platform, string> = { X: "X", INSTAGRAM: "Instagram", THREADS: "Threads" };
+const LABEL: Record<Platform, string> = { X: "X", INSTAGRAM: "Instagram", THREADS: "Threads", TIKTOK: "TikTok" };
 
 // 禁止ワードを含むか（大文字小文字・全角半角の違いは無視する）
 export function findProhibitedWords(text: string, words: string[]): string[] {
@@ -32,15 +32,17 @@ export function findProhibitedWords(text: string, words: string[]): string[] {
 // 投稿にちょうどよい長さ（文字数。Instagram はハッシュタグを除いた本文）。
 // 上限（capabilities.maxTextLength）とは別の「読みやすさの目安」。外れたら作り直す
 export const RECOMMENDED_LENGTH: Record<Platform, { min: number; max: number }> = {
-  X: { min: 50, max: 130 },
+  X: { min: 50, max: 100 },
   INSTAGRAM: { min: 150, max: 700 },
   THREADS: { min: 50, max: 250 },
+  TIKTOK: { min: 30, max: 150 },
 };
 
 // 目安と比べる本文（Instagram はハッシュタグを除く）
 function bodyText(draft: PostDraft, platform: Platform): string {
   if (platform === "INSTAGRAM") return draft.instagram.caption.trim();
-  return (platform === "X" ? draft.x.text : draft.threads.text).replace(HASHTAG_PATTERN, "").trim();
+  const text = platform === "X" ? draft.x.text : platform === "TIKTOK" ? draft.tiktok.text : draft.threads.text;
+  return text.replace(HASHTAG_PATTERN, "").trim();
 }
 
 export function lengthIssue(draft: PostDraft, platform: Platform): string | null {
@@ -114,8 +116,10 @@ export function checkDraft(draft: PostDraft, brand: BrandContext | null): { erro
     const tagCount = platform === "INSTAGRAM" ? draft.instagram.hashtags.length : (text.match(HASHTAG_PATTERN) ?? []).length;
     if (platform === "INSTAGRAM" && tagCount > HASHTAG_LIMIT_INSTAGRAM) {
       errors.push(`Instagramのハッシュタグが多すぎます（${tagCount}個。上限は${HASHTAG_LIMIT_INSTAGRAM}個）`);
-    } else if (tagCount > HASHTAG_GUIDE[platform]) {
-      warnings.push(`${name}のハッシュタグが多めです（${tagCount}個。目安は${HASHTAG_GUIDE[platform]}個まで）`);
+    } else if (tagCount > HASHTAG_RANGE.max) {
+      warnings.push(`${name}のハッシュタグが多めです（${tagCount}個。目安は5個程度）`);
+    } else if (tagCount < HASHTAG_RANGE.min) {
+      warnings.push(`${name}のハッシュタグが少なめです（${tagCount}個。目安は5個程度）`);
     }
   }
 

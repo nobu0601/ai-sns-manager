@@ -13,6 +13,7 @@ export const draftSchema = z.object({
     hashtags: z.array(z.string()).describe("# 付きのハッシュタグ"),
   }),
   threads: z.object({ text: z.string() }),
+  tiktok: z.object({ text: z.string().describe("動画のキャプション。文末にハッシュタグ3〜5個") }),
 });
 
 export const draftSetSchema = z.object({ drafts: z.array(draftSchema) });

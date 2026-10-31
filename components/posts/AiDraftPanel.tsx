@@ -83,7 +83,7 @@ export function AiDraftPanel({ topic, brandId, onAdopt, autoGenerate = false }: 
         )}
       </div>
       <p className="text-xs text-slate-600">
-        上の「投稿テーマ」と「ブランド」の設定をもとに、5つの型（{Object.values(DRAFT_STYLE_LABELS).join("・")}）で案を作り、X・Instagram・Threads 向けに書き分けます。
+        上の「投稿テーマ」と「ブランド」の設定をもとに、5つの型（{Object.values(DRAFT_STYLE_LABELS).join("・")}）で案を作り、X・Instagram・Threads・TikTok 向けに書き分けます（ハッシュタグは5個程度）。
         これまでの投稿（SNS にある過去の投稿を含む）と内容が重ならないようにし、各SNSにちょうどよい長さで書きます。
       </p>
       {meta && (
@@ -134,6 +134,10 @@ export function AiDraftPanel({ topic, brandId, onAdopt, autoGenerate = false }: 
                 <div>
                   <dt className="text-xs font-semibold text-slate-500">Threads</dt>
                   <dd className="whitespace-pre-wrap break-words text-slate-800">{d.threads.text}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold text-slate-500">TikTok</dt>
+                  <dd className="whitespace-pre-wrap break-words text-slate-800">{d.tiktok.text}</dd>
                 </div>
               </dl>
               {d.errors.length > 0 && <Alert title="直しきれなかった問題があります" messages={d.errors} />}

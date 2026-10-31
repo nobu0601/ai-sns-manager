@@ -13,6 +13,8 @@ export const CREDENTIAL_FIELDS: Record<Platform, CredentialField[]> = {
   THREADS: [
     { key: "accessToken", label: "アクセストークン", help: "Meta のアプリで発行した Threads の長期アクセストークン（threads_basic と threads_content_publish の権限が必要）" },
   ],
+  // TikTok はキーを貼らず、「TikTokでログインして連携」で接続する（トークンは24時間で切れるため自動で更新する）
+  TIKTOK: [],
   INSTAGRAM: [
     { key: "accessToken", label: "アクセストークン", help: "Instagram ログインで発行した長期アクセストークン（プロアカウントのみ。instagram_business_basic と instagram_business_content_publish の権限が必要）" },
   ],

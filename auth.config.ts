@@ -8,7 +8,7 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request }) {
       const { pathname } = request.nextUrl;
-      const isPublic = pathname === "/login" || pathname === "/register";
+      const isPublic = ["/login", "/register", "/terms", "/privacy"].includes(pathname);
       if (isPublic) return true;
       return !!auth?.user;
     },

@@ -5,7 +5,7 @@ import { Badge } from "@/components/common/Badge";
 import { Card, PageHeader } from "@/components/common/Card";
 import { AgentRunButton, ApproveRunButton } from "@/components/agent/AgentActions";
 import { AgentConfigForm, type AgentConfigValue } from "@/components/agent/AgentConfigForm";
-import { getAgentConfig, listAgentRuns } from "@/lib/agent/agent-service";
+import { agentSupports, getAgentConfig, listAgentRuns } from "@/lib/agent/agent-service";
 import { aiMode } from "@/lib/ai/registry";
 import { DRAFT_STYLE_LABELS, type DraftStyle } from "@/lib/ai/types";
 import { requirePageUserId } from "@/lib/auth/session";
@@ -102,7 +102,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
         <Card title={`${brand.name} の設定`} className="lg:col-span-2">
           <AgentConfigForm
             brandId={brand.id}
-            accounts={accounts}
+            accounts={accounts.filter((a) => agentSupports(a.platform))}
             initial={
               config
                 ? {

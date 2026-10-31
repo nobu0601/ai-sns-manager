@@ -20,6 +20,7 @@ export interface PostDraft {
   x: { text: string };
   instagram: { caption: string; hashtags: string[] };
   threads: { text: string };
+  tiktok: { text: string };
 }
 
 // AI に渡すブランド情報（Brand モデルの必要な項目）

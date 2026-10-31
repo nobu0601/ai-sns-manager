@@ -27,13 +27,14 @@ const draft = (over: Partial<PostDraft> = {}): PostDraft => ({
   style: "story",
   title: "t",
   summary: "s",
-  x: { text: "週末は読書の時間に。静かな席でページをめくると、平日の疲れが少しずつほどけていきます。ゆっくりどうぞ。" },
+  x: { text: "週末は読書の時間に。静かな席でページをめくると、平日の疲れが少しずつほどけていきます。ゆっくりどうぞ。\n#読書 #大阪カフェ #作業カフェ #週末 #Lounge" },
   instagram: {
     caption:
       "週末は読書の時間に。\n\n静かな席でページをめくると、平日の疲れが少しずつほどけていきます。好きな飲み物を片手に、読みかけの一冊を開いてみませんか。\n\n窓の外の光が変わっていくのを感じながら、自分のペースで過ごす時間。そんなひとときを大切にしてほしいと思っています。\n\nくわしくはプロフィールのリンクから。",
-    hashtags: ["#大阪", "#カフェ"],
+    hashtags: ["#大阪", "#カフェ", "#読書", "#大阪カフェ", "#Lounge"],
   },
-  threads: { text: "みなさんは週末どう過ごしますか？最近は静かな場所で本を読むのが楽しみになっています。おすすめの一冊があれば、ぜひ教えてください。" },
+  threads: { text: "みなさんは週末どう過ごしますか？最近は静かな場所で本を読むのが楽しみになっています。おすすめの一冊があれば、ぜひ教えてください。\n#読書 #大阪 #カフェ #週末 #Lounge" },
+  tiktok: { text: "週末は読書の時間に。静かな席でページをめくる、そんな過ごし方をのぞいてみませんか？ #大阪 #読書 #カフェ #週末 #Lounge" },
   ...over,
 });
 
@@ -70,10 +71,13 @@ describe("投稿案の品質チェック", () => {
     expect(result.errors.join()).toContain("Xの文章が長すぎます（282/280文字）");
   });
 
-  it("Instagram のハッシュタグは30個を超えるとエラー、X は3個以上で警告", () => {
+  it("ハッシュタグは5個程度が目安：Instagram は30個を超えるとエラー、8個以上・2個以下は警告", () => {
     const tags = Array.from({ length: 31 }, (_, i) => `#tag${i}`);
     expect(checkDraft(draft({ instagram: { caption: "本文", hashtags: tags } }), brand).errors.join()).toContain("31個");
-    expect(checkDraft(draft({ x: { text: "本文 #a #b #c" } }), brand).warnings.join()).toContain("Xのハッシュタグが多め");
+    const body = draft().x.text.split("\n")[0];
+    expect(checkDraft(draft({ x: { text: `${body} #a #b #c #d #e #f #g #h` } }), brand).warnings.join()).toContain("Xのハッシュタグが多め");
+    expect(checkDraft(draft({ x: { text: `${body} #a` } }), brand).warnings.join()).toContain("Xのハッシュタグが少なめ");
+    expect(checkDraft(draft(), brand).warnings).toEqual([]);
   });
 
   it("URL を含むと警告、空の文章はエラー", () => {

@@ -8,6 +8,7 @@ import { getJobDispatcher } from "@/lib/queue/jobs";
 import { CREDENTIAL_FIELDS, credentialHint, credentialMistakeHint } from "./credential-fields";
 import { SocialPublishError, apiErrorSummary, toSocialError } from "./errors";
 import { getAdapter, isMockMode } from "./registry";
+import { needsRefresh, refreshTokens, tiktokClientConfig, type TikTokCredentials } from "./tiktok/tiktok-api";
 import type { PlatformCredentials, VerifiedAccount } from "./types";
 
 // 画面・APIに返すアカウント情報（キーは絶対に含めない）
@@ -117,6 +118,42 @@ function credentialData(credentials: PlatformCredentials, verified: VerifiedAcco
   };
 }
 
+// TikTok のアクセストークンは24時間で切れるため、使う前に必要なら更新して保存する（refresh_token は365日）。
+// 更新できないとき（連携の解除・期限切れ）は SocialPublishError(AUTH)
+export async function freshCredentials(account: SocialAccount): Promise<PlatformCredentials> {
+  const credentials = readCredentials(account.credentialsEncrypted);
+  if (account.platform !== "TIKTOK" || account.isMock) return credentials;
+  const c = credentials as unknown as TikTokCredentials;
+  if (!needsRefresh(c)) return credentials;
+  const config = tiktokClientConfig();
+  if (!config) throw new SocialPublishError("AUTH", "TIKTOK", "TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET not set");
+  const { scope: _scope, ...next } = await refreshTokens(config, c.refreshToken);
+  await prisma.socialAccount.update({
+    where: { id: account.id },
+    data: { credentialsEncrypted: encrypt(JSON.stringify(next)), tokenExpiresAt: new Date(next.refreshTokenExpiresAt) },
+  });
+  logger.info("social.tiktok.token_refreshed", { accountId: account.id });
+  return next as unknown as PlatformCredentials;
+}
+
+// OAuth（TikTok など）で取得したトークンでアカウントを保存する。キーの入力欄が無い SNS 用
+export async function saveOAuthAccount(
+  userId: string,
+  platform: Platform,
+  credentials: PlatformCredentials,
+  verified: VerifiedAccount,
+): Promise<SocialAccountView> {
+  const data = { ...credentialData(credentials, verified), credentialHint: `${PLATFORM_LABELS[platform]}ログイン` };
+  const account = await prisma.socialAccount.upsert({
+    where: { userId_platform_externalAccountId: { userId, platform, externalAccountId: verified.externalAccountId } },
+    create: { userId, platform, externalAccountId: verified.externalAccountId, ...data },
+    update: data,
+  });
+  logger.info("social.connect.success", { userId, platform, accountId: account.id, via: "oauth" });
+  await requestInitialSync(userId);
+  return toView(account);
+}
+
 // アカウントを追加する（同じSNSアカウントのキーを入力し直した場合は更新）
 export async function connectAccount(
   userId: string,
@@ -195,7 +232,7 @@ export async function recheckAccount(userId: string, accountId: string): Promise
     throw new ServiceError(409, "現在のモードでは確認できないアカウントです。キーを入力し直してください。", "MODE_MISMATCH");
   }
   try {
-    const verified = await verify(account.platform, readCredentials(account.credentialsEncrypted));
+    const verified = await verify(account.platform, await freshCredentials(account));
     const updated = await prisma.socialAccount.update({
       where: { id: account.id },
       data: { accountName: verified.accountName, status: "CONNECTED", lastCheckedAt: new Date(), lastError: null },
@@ -231,7 +268,7 @@ export async function getPublishingAccount(
   }
   return {
     id: account.id,
-    credentials: readCredentials(account.credentialsEncrypted),
+    credentials: await freshCredentials(account),
     account: { accountName: account.accountName, externalAccountId: account.externalAccountId },
   };
 }

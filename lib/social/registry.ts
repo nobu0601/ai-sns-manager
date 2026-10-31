@@ -3,9 +3,10 @@ import { InstagramAdapter } from "./instagram/instagram-adapter";
 import { MockSocialAdapter } from "./mock/mock-adapter";
 import { ThreadsAdapter } from "./threads/threads-adapter";
 import type { SocialPlatformAdapter } from "./types";
+import { TikTokAdapter } from "./tiktok/tiktok-adapter";
 import { XAdapter } from "./x/x-adapter";
 
-export const PLATFORMS: Platform[] = ["X", "INSTAGRAM", "THREADS"];
+export const PLATFORMS: Platform[] = ["X", "INSTAGRAM", "THREADS", "TIKTOK"];
 
 export function isMockMode(): boolean {
   return (process.env.SOCIAL_PROVIDER_MODE ?? "mock") !== "live";
@@ -16,6 +17,7 @@ const liveAdapters: Record<Platform, () => SocialPlatformAdapter> = {
   X: () => new XAdapter(),
   INSTAGRAM: () => new InstagramAdapter(),
   THREADS: () => new ThreadsAdapter(),
+  TIKTOK: () => new TikTokAdapter(),
 };
 
 export function getAdapter(platform: Platform): SocialPlatformAdapter {

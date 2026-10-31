@@ -247,6 +247,65 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
     ],
   },
 
+  TIKTOK: {
+    summary:
+      "TikTok for Developers でアプリを作り、その「Client key」と「Client secret」をサーバーに設定したうえで、この画面の「TikTokでログインして連携」を押します（約30分）。",
+    before: [
+      "投稿したい TikTok アカウント",
+      "TikTok は動画だけ投稿できます（文章だけ・画像だけの投稿はできません）",
+      "TikTok の審査が通るまでは、投稿は「自分だけに表示」になります（TikTok の決まり）",
+    ],
+    steps: [
+      {
+        title: "TikTok for Developers でアプリを作る",
+        body: [
+          "https://developers.tiktok.com にログインし、右上のプロフィールアイコン →「Manage apps」→「Connect an app」を押します。",
+          "アプリのアイコン（1024×1024px）、アプリ名、カテゴリ、説明を入れます。説明は TikTok の許可画面に表示されます。",
+          "「Platforms」で「Web」を選び、このアプリのURL（https://ai-sns-manager.onrender.com）を入れます。",
+          "利用規約とプライバシーポリシーのURLには、このアプリの /terms と /privacy を入れます。",
+        ],
+      },
+      {
+        title: "ログインと投稿の機能を追加する",
+        body: [
+          "「Products」の「Add products」で「Login Kit」と「Content Posting API」を追加します。",
+          "Login Kit の「Redirect URI」に https://ai-sns-manager.onrender.com/api/social/tiktok/callback を登録します。",
+          "Content Posting API の「Direct Post」を有効にします。",
+          "「Scopes」に user.info.basic と video.publish を追加します。",
+        ],
+      },
+      {
+        title: "Sandbox で自分のアカウントをテストユーザーにする",
+        body: [
+          "審査前でも試せるよう、アプリ名の横の切り替えを「Sandbox」にして「Create Sandbox」を押します。",
+          "「Sandbox settings」の「Target users」で「Add account」を押し、投稿したい TikTok アカウントでログインします（最大10アカウント）。",
+          "Sandbox の画面に表示される「Client key」と「Client secret」を控えます。",
+        ],
+      },
+      {
+        title: "Client key と Client secret をサーバーに設定する",
+        body: [
+          "Render の ai-sns-manager の「Environment」に、TIKTOK_CLIENT_KEY と TIKTOK_CLIENT_SECRET を追加して保存します。",
+          "保存すると自動で再起動し、この画面の TikTok に「TikTokでログインして連携」ボタンが使えるようになります。",
+        ],
+      },
+      {
+        title: "このアプリで「TikTokでログインして連携」を押す",
+        body: ["TikTok の許可画面で「許可」を押すと、この画面に戻って連携が完了します。トークンの更新はアプリが自動で行います。"],
+      },
+    ],
+    after: [
+      "TikTok の審査に通るまで、投稿は「自分だけに表示」になります。審査に通ったら、サーバーの TIKTOK_PRIVACY_LEVEL を PUBLIC_TO_EVERYONE にすると全体公開で投稿します。",
+      "連携が切れたとき（1年使わなかった場合など）は、もう一度「TikTokでログインして連携」を押してください。",
+      "AI エージェントの投稿先には、TikTok は選べません（動画が必須のため）。投稿作成画面から動画を付けて投稿してください。",
+    ],
+    sources: [
+      { label: "TikTok 公式：Content Posting API", url: "https://developers.tiktok.com/doc/content-posting-api-get-started" },
+      { label: "TikTok 公式：アプリの登録", url: "https://developers.tiktok.com/doc/getting-started-create-an-app" },
+      { label: "TikTok 公式：Sandbox", url: "https://developers.tiktok.com/doc/add-a-sandbox" },
+    ],
+  },
+
   X: {
     summary: "X の開発者コンソールでアプリを作り、4つのキーを発行します（約20分）。X の API は使った分だけの有料です。",
     before: [

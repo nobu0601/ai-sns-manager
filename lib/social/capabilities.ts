@@ -37,4 +37,16 @@ export const PLATFORM_CAPABILITIES: Record<Platform, SocialPlatformCapabilities>
     maxTextLength: 500,
     lengthCounting: "codepoints",
   },
+  // TikTok：動画のみ（Content Posting API の Direct Post）。キャプションは最大2200（UTF-16 単位。公式ドキュメント）
+  TIKTOK: {
+    textPost: false,
+    imagePost: false,
+    videoPost: true,
+    scheduledPost: false,
+    analytics: false,
+    deletePost: false,
+    requiresMedia: true,
+    maxTextLength: 2200,
+    lengthCounting: "codepoints",
+  },
 };

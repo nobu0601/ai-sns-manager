@@ -79,6 +79,7 @@ describe.skipIf(!hasTestDatabase)("AI投稿生成（統合）", async () => {
             x: { text: "あ".repeat(200) },
             instagram: { caption: "c", hashtags: [] },
             threads: { text: `t-${style}` },
+            tiktok: { text: `k-${style}` },
           })),
         };
       },

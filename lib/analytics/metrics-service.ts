@@ -7,6 +7,7 @@ import { logger } from "@/lib/logging/logger";
 import { getJobDispatcher } from "@/lib/queue/jobs";
 import { readCredentials } from "@/lib/social/account-service";
 import { toSocialError } from "@/lib/social/errors";
+import { PLATFORM_CAPABILITIES } from "@/lib/social/capabilities";
 import { getAdapter, isMockMode } from "@/lib/social/registry";
 
 // 数値を取り直す対象：投稿から30日以内（それより古い投稿の数値はほとんど変わらないため）
@@ -66,6 +67,8 @@ export async function collectMetrics({ userId, now = new Date() }: { userId?: st
   const summary: CollectSummary = { accounts: accounts.length, posts: 0, errors: [] };
 
   for (const account of accounts) {
+    // 数値の取得に対応していない SNS（TikTok）は飛ばす
+    if (!PLATFORM_CAPABILITIES[account.platform].analytics) continue;
     const adapter = getAdapter(account.platform);
     const credentials = readCredentials(account.credentialsEncrypted);
     const verified = { accountName: account.accountName, externalAccountId: account.externalAccountId };
