@@ -62,6 +62,10 @@ MOCK_TRANSIENT_FAILURE_RATE=0.3  # 30% の確率で一時失敗
 
 `fetchPostMetrics()` / `fetchFollowerCount()` は、投稿ごとに決まった擬似の数値を返す。返す項目は実際の API と同じ（Threads の保存は `null`、リーチは Instagram のみ）。キーに `nometrics` を含めると、分析で「権限がない」場合の動作を再現できる。
 
+### Mock の過去投稿
+
+`fetchRecentPosts()` は、アカウントごとに決まった架空の過去投稿を 2 件返す。
+
 ---
 
 ## Live Mode（本番・Step 11 以降）
@@ -118,6 +122,16 @@ Adapter の `fetchPostMetrics()`（投稿の数値）と `fetchFollowerCount()`�
 - クリック数は、どの SNS からも取得しない（API が確認できないため）。`PostMetric.clicks` は常に `null`
 - 確認元：X は公式ドキュメント（Get Posts by IDs）と公式 SDK（@xdevplatform/xdk）、Threads は Meta 公式サンプル（github.com/fbsamples/threads_api）、Instagram は公式ドキュメント（Instagram Media Insights / IG User）
 - 本物のキーでの数値取得は未確認（開発環境にキーがない）
+
+### 過去投稿の読み取り（AI の参考用）
+
+Adapter の `fetchRecentPosts(credentials, account, limit)` が返す（型は `RecentPost`、`lib/social/types.ts`）。分析の数値取得と同じ Worker の処理で呼ぶ。
+
+| SNS | 読み取り | 注意 |
+|-----|---------|------|
+| X | 読まない（空を返す） | 読み取りに料金がかかるため |
+| Threads（`threads/threads-adapter.ts`） | `GET me/threads?fields=id,text,timestamp,permalink&limit=…` | 本文のない投稿は飛ばす。Meta 公式サンプル（github.com/fbsamples/threads_api、ルート `/threads`）で確認 |
+| Instagram（`instagram/instagram-adapter.ts`） | `GET me/media?fields=id,caption,timestamp,permalink&limit=…` | 公式の IG Media のリファレンスでは、caption は Facebook ログインの Instagram API でのみ取得できるとされている。取得できない（エラーまたは空）場合は、エラーにせず Instagram を飛ばす。本物のアカウントでは未確認 |
 
 ### 環境変数
 

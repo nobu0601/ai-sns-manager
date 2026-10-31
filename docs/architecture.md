@@ -137,7 +137,8 @@ lib/ai/
   claude-provider.ts / mock-provider.ts
   schema.ts          ← 構造化出力用の zod スキーマ（draftSetSchema）
   prompts.ts         ← prompts/ の読み込みと、ユーザー入力のプロンプト組み立て
-  quality.ts         ← checkDraft() / findDuplicates()
+  quality.ts         ← checkDraft() / findDuplicates() / 過去投稿との類似チェック（findSimilarPast）/ 推奨文字数（RECOMMENDED_LENGTH）
+  history.ts         ← loadPostHistory(): これまでの投稿（最大 30 件）を集める
   types.ts / errors.ts
 ```
 
@@ -178,10 +179,22 @@ interface AIProvider {
    - errors（作り直し対象）: 空の文章、文字数超過、禁止キーワード、Instagram のハッシュタグ30個超
    - warnings（表示のみ）: URL を含む、ハッシュタグが目安を超える
 3. `findDuplicates()`: X の文章が他の案と同じなら errors
-4. errors のある案だけ、問題点を `feedback` として渡して作り直す。作り直しは最大 `MAX_REGENERATIONS`（2）回（呼び出しは最大3回）
-5. 作り直しても直らなかった問題は `errors` に残して返す
+4. 過去の投稿との類似: `loadPostHistory()` の投稿と文章を比べ、文字の 2 文字組（bigram）の重なりが `SIMILARITY_THRESHOLD`（0.6）以上なら errors。作り直しの指示には、似ている過去の投稿を入れる。20 字未満の文章は比べない
+5. 推奨文字数（`RECOMMENDED_LENGTH`）: X は 50〜130 字、Instagram は本文 150〜700 字（ハッシュタグを除く）、Threads は 50〜250 字。範囲外なら errors。上限（`capabilities.maxTextLength`）とは別
+6. errors のある案だけ、問題点を `feedback` として渡して作り直す。作り直しは最大 `MAX_REGENERATIONS`（2）回（呼び出しは最大3回）
+7. 作り直しても直らなかった問題は `errors` に残して返す
 
 文字数: X は `xWeightedLength()`（`lib/social/text-length.ts`）で数える。U+0000〜U+10FF など一部の範囲は1、それ以外（日本語・絵文字など）は2、URL は一律23として数え、上限280と比べる。他の SNS はコードポイント数で数える。
+
+### 過去の投稿
+
+`loadPostHistory()`（`lib/ai/history.ts`）が「これまでの投稿」を集め、AI の投稿案と AI Agent の計画に渡す。
+
+- 次の 2 つを合わせ、新しい順に最大 30 件。同じ文章は 1 件にまとめる
+  - このアプリの投稿（PostPlatform が PUBLISHED / SCHEDULED / POSTING のもの）
+  - SNS から読んだ投稿（`ExternalPost`）
+- 生成の指示（`prompts/post-generation/system.md` の「これまでの投稿との関係」）では、過去と同じテーマ・切り口・言い回しを避け、過去の投稿の流れに沿うよう指示する
+- `POST /api/ai/drafts` の応答には `historyCount` が入る
 
 ### 保存と承認
 
@@ -224,7 +237,7 @@ lib/media/
 
 `lib/agent/`（`agent-service.ts` / `slots.ts` / `plan-check.ts`）が、ブランドごとに今後7日間の投稿を作る。**日時はコードで決め、AI はテーマ・型・画像のアイデアだけを決める。**
 
-1. 直近30件の投稿履歴と、今後の予定を読む
+1. `loadPostHistory()` で直近 30 件の投稿履歴（「過去の投稿」を参照）と、今後の予定を読む
 2. `computeSlots()`: 1時間後から7日以内に `postsPerWeek` 件の枠を作る。`preferredWeekdays` の曜日を優先し、予定のある日は避け、間隔を均等にする（JST）
 3. `planWeek()` → `checkPlan()`: 枠の欠落・重複、型、投稿テーマの柱（登録済みか、偏りすぎていないか）を確認する。違反があれば指摘を付けて作り直す（計2回まで。`PLAN_ATTEMPTS`）。直らなければ run は FAILED
 4. 枠ごとに `generateDrafts()`（その枠の型で1案。品質チェック込み）→ `createPost()`（`aiGenerated` に model / style、投稿先は実行時の対象アカウント）→ `scheduledAt` / `agentRunId` / `contentPillar` を設定
@@ -246,8 +259,9 @@ lib/media/
    - フォロワー数は日本時間の 1 日に 1 件（`AccountMetric`）。同じ日は上書きする
    - 1 件の投稿が失敗（削除されたなど）しても、ほかの投稿は続ける
    - アカウントごとの失敗は `SocialAccount.metricsError`（画面に出す文）と `metricsCheckedAt` に残す
-2. 実行の契機は 2 つ：6 時間ごと（job scheduler `metrics-refresh-all`）と、「数値を更新」（`POST /api/analytics/refresh`）
-3. SNS が返さない指標は `null` のまま保存する（0 にしない）
+2. 実行の契機は 3 つ：6 時間ごと（job scheduler `metrics-refresh-all`）、「数値を更新」（`POST /api/analytics/refresh`）、アカウントの連携・キー更新の直後（そのユーザーの分をキューに入れる）
+3. 同じ実行で、直近の投稿（最大 30 件。`RECENT_POSTS_LIMIT`）も読み、`ExternalPost` に保存する。このアプリが投稿したもの（`PostPlatform.externalPostId` と一致するもの）は除く。読み取りに失敗しても数値の取得は続け、ログ（`history.sync_failed`）に残す
+4. SNS が返さない指標は `null` のまま保存する（0 にしない）
 
 ### AI 分析
 
@@ -297,7 +311,7 @@ interface SocialPlatformAdapter {
 }
 ```
 
-分析用に `fetchPostMetrics()`（投稿の数値）と `fetchFollowerCount()`（フォロワー数）も持つ（`lib/social/types.ts`）。
+分析用に `fetchPostMetrics()`（投稿の数値）と `fetchFollowerCount()`（フォロワー数）も持つ（`lib/social/types.ts`）。過去の投稿の読み取り用に `fetchRecentPosts()` も持つ（戻り値は `RecentPost`）。
 
 ### Mode: Mock vs Live
 

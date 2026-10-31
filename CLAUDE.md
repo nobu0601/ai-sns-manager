@@ -84,6 +84,9 @@ workers/analytics-worker.ts            分析の Worker（SNS の数値取得・
 - AI は Claude（Anthropic）を使う。キーは `.env` の `ANTHROPIC_API_KEY`（ユーザーごとの入力欄は作らない）。既定モデルは `claude-sonnet-5-5`（`ANTHROPIC_MODEL` で変更）
 - Claude の呼び出しは `lib/ai/claude-provider.ts` だけに置く。公式 SDK（`@anthropic-ai/sdk`）を使い、`fetch` で直接呼ばない。SDK の使い方を推測で書かない
 - テストや APIキー未設定時は `MockAIProvider`（`setAIProvider()` で差し替え可能）。テストで本物の Claude を呼ばない
+- 過去の投稿は `loadPostHistory()`（`lib/ai/history.ts`）を通して AI に渡す
+- `lib/ai/quality.ts` の `RECOMMENDED_LENGTH` は、`prompts/` の文字数の指示（x / instagram / threads の guidelines）と揃える
+- X の投稿は読まない（読み取りに料金がかかるため）。`fetchRecentPosts` の X は空を返す
 
 ## 9. 画像・動画生成と AI エージェントのルール
 

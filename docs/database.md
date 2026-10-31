@@ -210,6 +210,7 @@ SNS アカウント。API キー類は暗号化。パスワード・秘密情報
 - `user`: User
 - `brand`: Brand?
 - `postPlatforms`: PostPlatform[]
+- `externalPosts`: ExternalPost[]
 
 **Unique Constraints:**
 - `(userId, platform, externalAccountId)`
@@ -424,6 +425,33 @@ AI 分析の結果。根拠の投稿データ（`evidence`）も一緒に保存�
 **Relations:** `user`: User、`brand`: Brand。**Indexes:** `(userId, brandId, createdAt)`
 
 マイグレーション：`20261025030000_analytics`（既存テーブルへの追加のみ。`SocialAccount` に `metricsError` / `metricsCheckedAt` を追加し、上の 3 テーブルを作る）
+
+---
+
+### ExternalPost
+
+SNS から読んだ投稿（過去の投稿）。AI の「これまでの投稿」に使う。分析の数値取得のときに保存する。このアプリが投稿したもの（`PostPlatform.externalPostId` と一致するもの）は保存しない。
+
+| Column | Type | 説明 |
+|--------|------|------|
+| id | String (cuid) | Primary Key |
+| socialAccountId | String (fk) | 対象の SocialAccount（削除で一緒に削除） |
+| platform | Platform | X / INSTAGRAM / THREADS |
+| externalPostId | String | SNS 側の投稿 ID |
+| text | String | 本文（Instagram は caption） |
+| permalink | String? | SNS 側の投稿 URL |
+| publishedAt | DateTime | 投稿日時 |
+| fetchedAt | DateTime | 取得日時 |
+
+**Relations:** `socialAccount`: SocialAccount
+
+**Unique Constraints:**
+- `(socialAccountId, externalPostId)`
+
+**Indexes:**
+- `(socialAccountId, publishedAt)`
+
+マイグレーション：`20261031010000_external_posts`（テーブルの追加のみ）
 
 ---
 
