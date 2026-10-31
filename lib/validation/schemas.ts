@@ -34,19 +34,27 @@ export const scheduleInputSchema = z.object({
 
 export const publishInputSchema = z.object({ approve: z.boolean().optional() });
 
-const stringList = z.array(z.string().trim().min(1).max(100)).max(50).default([]);
+// ブランドの文章の上限（1欄あたり）。詳しく書けるよう大きめにしている。毎回 AI に渡すため上限だけは残す
+export const BRAND_TEXT_MAX = 10000;
+const brandText = (label: string) =>
+  z.string().max(BRAND_TEXT_MAX, `${label}は${BRAND_TEXT_MAX.toLocaleString("ja-JP")}字以内にしてください`).default("");
+const stringList = (label: string) =>
+  z
+    .array(z.string().trim().min(1).max(200, `${label}は1つ200字以内にしてください`))
+    .max(100, `${label}は100個までにしてください`)
+    .default([]);
 
 export const brandInputSchema = z.object({
-  name: z.string().trim().min(1, "ブランド名を入力してください").max(100),
-  description: z.string().max(2000).default(""),
-  targetAudience: z.string().max(1000).default(""),
-  brandImage: z.string().max(1000).default(""),
-  tone: z.string().max(500).default(""),
-  objective: z.string().max(1000).default(""),
-  avoidExpressions: z.string().max(1000).default(""),
-  keywords: stringList,
-  prohibitedWords: stringList,
-  contentPillars: stringList,
+  name: z.string().trim().min(1, "ブランド名を入力してください").max(200, "ブランド名は200字以内にしてください"),
+  description: brandText("ブランド説明"),
+  targetAudience: brandText("ターゲット"),
+  brandImage: brandText("ブランドイメージ"),
+  tone: brandText("文章トーン"),
+  objective: brandText("投稿目的"),
+  avoidExpressions: brandText("避けたい表現"),
+  keywords: stringList("使用したいキーワード"),
+  prohibitedWords: stringList("禁止キーワード"),
+  contentPillars: stringList("投稿テーマの柱"),
 });
 export type BrandInput = z.infer<typeof brandInputSchema>;
 

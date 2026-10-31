@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { hasTestDatabase } from "../helpers";
 
 // 分析（Phase 4）の統合テスト。SNS・AI・キューは Mock／記録用に差し替える
@@ -75,6 +75,8 @@ describe.skipIf(!hasTestDatabase)("分析（統合）", async () => {
   });
 
   beforeEach(async () => {
+    // 実際の日付が進んでもテストが壊れないよう、Date だけを NOW に固定する
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
     ai = new MockAIProvider();
     setAIProvider(ai);
     analysisJobs.length = 0;
@@ -85,7 +87,10 @@ describe.skipIf(!hasTestDatabase)("分析（統合）", async () => {
     await prisma.accountMetric.deleteMany({ where: { socialAccount: { userId } } });
   });
 
-  afterEach(() => setAIProvider(null));
+  afterEach(() => {
+    setAIProvider(null);
+    vi.useRealTimers();
+  });
 
   afterAll(async () => {
     await prisma.user.deleteMany({ where: { id: { in: [userId, otherUserId] } } });

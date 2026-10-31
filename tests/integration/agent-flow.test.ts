@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { hasTestDatabase } from "../helpers";
 
 // AI Agent と画像生成の統合テスト（AI・画像生成・キューは Mock／記録用に差し替える）
@@ -82,6 +82,8 @@ describe.skipIf(!hasTestDatabase)("AI Agent・画像生成（統合）", async (
   });
 
   beforeEach(async () => {
+    // 予約の「過去の日時か」の判定も NOW 基準にする（実際の日付が進んでもテストが壊れないように）。Date だけを固定する
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
     ai = new MockAIProvider();
     mediaProvider = new MockMediaProvider();
     setAIProvider(ai);
@@ -96,6 +98,7 @@ describe.skipIf(!hasTestDatabase)("AI Agent・画像生成（統合）", async (
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     setAIProvider(null);
     setMediaProvider(null);
   });

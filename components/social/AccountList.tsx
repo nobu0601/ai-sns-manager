@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/datetime";
 import { PLATFORM_LABELS } from "@/lib/errors/user-messages";
 import { ACCOUNT_STATUS_LABELS } from "@/lib/labels";
 import { AccountKeyForm } from "./AccountKeyForm";
+import { SetupGuide } from "./SetupGuide";
 
 export type AccountItem = {
   id: string;
@@ -64,6 +65,8 @@ export function AccountList({ platform, accounts, brands, mockMode }: Props) {
           <button className={btn.small} onClick={() => setEditing("new")}>＋ アカウントを追加</button>
         )}
       </div>
+
+      <SetupGuide platform={platform} open={accounts.length === 0 && editing === "new"} />
 
       {message && (
         <p role={message.tone === "error" ? "alert" : "status"} className={`mb-3 text-sm ${message.tone === "error" ? "text-rose-700" : "text-emerald-700"}`}>

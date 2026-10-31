@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Alert } from "@/components/common/Alert";
 import { btn, input, label } from "@/components/common/buttons";
 import { ApiError, apiFetch } from "@/lib/client/api";
+import { BRAND_TEXT_MAX } from "@/lib/validation/schemas";
 
 export type BrandFormValue = {
   id?: string;
@@ -40,13 +41,14 @@ const toList = (text: string) =>
     .map((s) => s.trim())
     .filter(Boolean);
 
-const TEXT_FIELDS: { key: keyof BrandFormValue; label: string; rows?: number; placeholder?: string }[] = [
-  { key: "description", label: "ブランド説明", rows: 3 },
-  { key: "targetAudience", label: "ターゲット", rows: 2 },
-  { key: "brandImage", label: "ブランドイメージ", rows: 2 },
-  { key: "tone", label: "文章トーン", placeholder: "例：おしゃれ、落ち着いた、親しみやすい" },
-  { key: "objective", label: "投稿目的", rows: 2 },
-  { key: "avoidExpressions", label: "避けたい表現", rows: 2 },
+// すべて複数行で入力できる。詳しく書くほど AI の文章がブランドに合う
+const TEXT_FIELDS: { key: keyof BrandFormValue; label: string; rows: number; placeholder?: string }[] = [
+  { key: "description", label: "ブランド説明", rows: 6, placeholder: "どんなお店・サービスか、特徴、こだわりなど" },
+  { key: "targetAudience", label: "ターゲット", rows: 4, placeholder: "年代、職業、どんな悩みや目的を持つ人か" },
+  { key: "brandImage", label: "ブランドイメージ", rows: 4, placeholder: "空間の雰囲気、色、言葉で表すと" },
+  { key: "tone", label: "文章トーン", rows: 3, placeholder: "例：おしゃれ、落ち着いた、親しみやすい。絵文字は1つまで" },
+  { key: "objective", label: "投稿目的", rows: 3 },
+  { key: "avoidExpressions", label: "避けたい表現", rows: 4 },
 ];
 
 const LIST_FIELDS: { key: "keywords" | "prohibitedWords" | "contentPillars"; label: string }[] = [
@@ -104,33 +106,29 @@ export function BrandForm({ initial, onDone }: { initial?: BrandFormValue; onDon
       {TEXT_FIELDS.map((f) => (
         <div key={f.key}>
           <label className={label} htmlFor={`brand-${f.key}`}>{f.label}</label>
-          {f.rows ? (
-            <textarea
-              id={`brand-${f.key}`}
-              rows={f.rows}
-              value={value[f.key] as string}
-              onChange={(e) => setValue({ ...value, [f.key]: e.target.value })}
-              className={input}
-            />
-          ) : (
-            <input
-              id={`brand-${f.key}`}
-              value={value[f.key] as string}
-              placeholder={f.placeholder}
-              onChange={(e) => setValue({ ...value, [f.key]: e.target.value })}
-              className={input}
-            />
-          )}
+          <textarea
+            id={`brand-${f.key}`}
+            rows={f.rows}
+            maxLength={BRAND_TEXT_MAX}
+            placeholder={f.placeholder}
+            value={value[f.key] as string}
+            onChange={(e) => setValue({ ...value, [f.key]: e.target.value })}
+            className={`${input} resize-y`}
+          />
+          <p className="mt-1 text-right text-xs text-slate-400">
+            {(value[f.key] as string).length.toLocaleString("ja-JP")} / {BRAND_TEXT_MAX.toLocaleString("ja-JP")}字
+          </p>
         </div>
       ))}
       {LIST_FIELDS.map((f) => (
         <div key={f.key}>
-          <label className={label} htmlFor={`brand-${f.key}`}>{f.label}（「、」区切り）</label>
-          <input
+          <label className={label} htmlFor={`brand-${f.key}`}>{f.label}（「、」または改行で区切る）</label>
+          <textarea
             id={`brand-${f.key}`}
+            rows={2}
             value={lists[f.key]}
             onChange={(e) => setLists({ ...lists, [f.key]: e.target.value })}
-            className={input}
+            className={`${input} resize-y`}
           />
         </div>
       ))}
