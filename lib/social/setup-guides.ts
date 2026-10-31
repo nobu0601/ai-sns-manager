@@ -84,9 +84,9 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
       {
         title: "自分の Threads アカウントを「テスター」に追加する",
         body: [
-          "左メニューの「アプリの役割」→「役割」を開きます。",
-          "「メンバーを追加」を押し、種類で「Threads Tester」を選びます。",
-          "自分の Threads のユーザー名（@ の後ろ）を入れて送信します。",
+          "左メニューの「アプリの役割」→「役割」を開き、右上の「メンバーを追加」を押します。",
+          "「アプリに人を追加」の画面で、下の「このアプリの追加の役割」にある「Threadsテスター」を選びます。",
+          "下の入力欄に自分の Threads のユーザーネーム（@ の後ろ）を入れて、「追加」を押します。",
         ],
         screen: {
           kind: "browser",
@@ -96,22 +96,24 @@ export const SETUP_GUIDES: Record<Platform, SetupGuide> = {
           rows: [
             { label: "管理者：あなた" },
             { label: "", action: "メンバーを追加", highlight: true },
-            { label: "種類：Threads Tester", highlight: true, note: "これを選ぶ" },
+            { label: "○ Threadsテスター", highlight: true, note: "これを選ぶ" },
           ],
         },
       },
       {
         title: "Threads アプリで招待を承認する",
         body: [
-          "スマホの Threads アプリで、自分のプロフィール → 右上のメニュー（≡）→「設定」を開きます。",
-          "「アカウント」→「ウェブサイトのアクセス許可」→「招待」に届いている、作ったアプリの招待を「承認」します。",
+          "パソコンなら threads.com の左上のメニュー（＝）→「設定」、スマホなら Threads アプリのプロフィール → 右上のメニュー →「設定」を開きます。",
+          "「その他の設定」→「ウェブサイトのアクセス許可」を開き、「招待」タブに届いている、作ったアプリの招待を承認します。",
+          "承認すると「アクティブ」タブにアプリ名が表示されます。",
+          "あわせて「プライバシー」→「非公開プロフィール」が「公開」になっていることも確認してください（非公開だとトークンを発行できません）。",
         ],
         screen: {
           kind: "phone",
-          site: "Threads アプリ",
-          heading: "設定 ＞ アカウント ＞ ウェブサイトのアクセス許可",
+          site: "threads.com/settings",
+          heading: "設定 ＞ その他の設定 ＞ ウェブサイトのアクセス許可",
           rows: [
-            { label: "招待", highlight: true },
+            { label: "アクティブ ／ 期限切れ ／ 削除済み ／ 招待", highlight: true, note: "「招待」タブ" },
             { label: "Lounge+ SNS", action: "承認", highlight: true },
           ],
         },
